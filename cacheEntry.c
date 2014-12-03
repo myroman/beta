@@ -36,10 +36,10 @@ CacheEntry * findCacheEntry(in_addr_t ip, char* hw, CacheEntry *headCache){
 	CacheEntry * ptr = headCache;
 	while(ptr != NULL){
 		if(ptr->ip == ip){
-			debug("IP match");
+			//debug("IP match");
 			int val = memcmp(hw, ptr->if_haddr, IF_HADDR);
 			if( val == 0){
-				debug("Str match");
+				//debug("Str match");
 				return ptr;
 			}
 		}
@@ -62,4 +62,10 @@ void printCacheEntries(CacheEntry *headCache){
 		ptr = ptr->right;
 	}
 	printf("*********************\n");
+}
+
+void updateCacheEntry(CacheEntry * entry, int ifind, unsigned short hatype, int ufd){
+	entry->sll_ifindex = ifind;
+	entry->sll_hatype = hatype;
+	entry->unix_fd = ufd;
 }

@@ -102,7 +102,10 @@ void testCacheEntry(){
 	}
 	else{
 		debug("FOUND Entry");
+		updateCacheEntry(test, 4,5,6);
 	}
+	printCacheEntries(headCache);
+
 }
 
 //No command line arguments are passed into this executable
@@ -117,7 +120,9 @@ int main (){
 	//		Unix domain of type sock stream listening socket bound to a well 
 	// 		sunpath file 
 
+	//TODO: remove the funciton call below it is for testing purposes only
 	testCacheEntry();
+
 	freeSet();
 	debug("Sets freed from interface exploration.");
 	return 0;
