@@ -1,13 +1,14 @@
-#include "debug.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include "unp.h"
-#include "debug.h"
-#include "hw_addrs.h"
+
 #include "arp.h"
 
+//This is the pointer to the set IP to hardware address pairs of eth0
 Set *headSet = NULL;
 Set *tailSet = NULL;
+
+//This is the pointer to the cache entries 
+CacheEntry *headCache = NULL;
+CacheEntry *tailCache = NULL;
+
 
 Set * allocateSet(){
 	Set * toRet = (Set*) malloc(sizeof(Set));
@@ -45,7 +46,7 @@ void printAddressPair(Set *pair){
 	//Print HW address
 
 	//Code modified from prhwaddrs.c file
-	prflag = 0;
+	/*prflag = 0;
 	i = 0;
 	do {
 		if (pair->hw_addr[i] != '\0') {
@@ -60,7 +61,9 @@ void printAddressPair(Set *pair){
 		do {
 			printf("%.2x%s", *ptr++ & 0xff, (i == 1) ? " " : ":");
 		} while (--i > 0);
-	}
+	}*/
+
+	printHardware(pair->hw_addr);
 
 	printf(" >\n");
 }
@@ -90,13 +93,24 @@ int exploreInterfaces(){
 	}
 }
 
+void testCacheEntry(){
+	insertCacheEntry(headSet->ip, headSet->hw_addr, 1, 2, 3, &headCache, &tailCache);
+	printCacheEntries(headCache);
+}
+
 //No command line arguments are passed into this executable
 //runs on every VM [0-10]
 int main (){
-	//TODO: callget_hw_addr function to explore node interfaces. Build a set of
-	//		all eht0 interfaces IP addresses
+	
+	//Explore interfaces and build a set of eth0 pairs found
 	exploreInterfaces();
 
+	//TODO: Create two sockets one PF_PACKET and one Unix Domain socket 
+	//		PF_PACKET of type SOCK_RAW
+	//		Unix domain of type sock stream listening socket bound to a well 
+	// 		sunpath file 
+
+	testCacheEntry();
 	freeSet();
 	debug("Sets freed from interface exploration.");
 	return 0;

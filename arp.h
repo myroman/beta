@@ -2,6 +2,13 @@
 #define __ARP_H
 #include "unp.h"
 #include "misc.h"
+#include "debug.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include "debug.h"
+#include "hw_addrs.h"
+#include "cacheEntry.h"
+
 typedef struct Set Set;
 struct Set{
 	in_addr_t ip;
