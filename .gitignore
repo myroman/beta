@@ -1,4 +1,6 @@
 *.o
+*.orig
+
 arp
 tour
 prhwaddrs
