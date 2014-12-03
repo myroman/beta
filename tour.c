@@ -419,36 +419,38 @@ void dispatch(int rtSocket) {
 	struct timeval tv;	
 	char* buf = malloc(MAXLINE);
 	SockAddrIn senderAddr;	
-	int addrLen = sizeof(senderAddr);
+	int addrLen = sizeof(senderAddr),
+	res = 0;
 
 	debug("Gonna listen to rtsocket: %d", rtSocket);
 	for(;;){
-		tv.tv_sec = 120;
+		tv.tv_sec = 10;
 		tv.tv_usec = 0;
 		FD_ZERO(&set);
 		FD_SET(rtSocket, &set);
 
 		maxfd = rtSocket+1;
 		printf("Waiting for incoming packets...\n");
-		select(maxfd, &set, NULL, NULL, &tv);
+		res = select(maxfd, &set, NULL, NULL, &tv);
+		if (res < 0) {
+			debug("Nothing read. Timeout.");				
+			continue;
+		}
 		
 		if(FD_ISSET(rtSocket, &set)){
 			// let's choose some smaller value than 1500 bytes.
 			bzero(buf, MAXLINE);
-			printf("Waiting for request...");
-
 			bzero(&senderAddr, addrLen);
 		 	addrLen = sizeof(senderAddr);
 			int length = recvfrom(rtSocket, buf, MAXLINE, 0, (SA* )&senderAddr, &addrLen);
 			if (length == -1) { 
 				printFailed();								
 			}
-			printOK();
 			debug("Got IP raw packet, length = %d", length);									
 			processRtResponse(buf, length, senderAddr);
-			break;
+			//break;
 		}		
-		debug("Nothing read. Timeout.");				
+		
 	}
 	free(buf);
 }
@@ -457,7 +459,6 @@ void dispatch(int rtSocket) {
 void processRtResponse(char *ptr, ssize_t len, SockAddrIn senderAddr)
 {
 	int	icmplen;
-	double			rtt;
 	struct timeval	*tvsend;
 	char buff[MAXLINE];	
 
@@ -471,9 +472,9 @@ void processRtResponse(char *ptr, ssize_t len, SockAddrIn senderAddr)
 		return;				/* malformed packet */
 
 	time_t ticks = time(NULL);
-    snprintf(buff, sizeof(buff), "%.24s\r\n", ctime(&ticks));
+    snprintf(buff, sizeof(buff), "%.24s", ctime(&ticks));
 
-	printf("%s received source routing packet from %s.icmp type=%d, id=%d\n", buff, inet_ntoa(senderAddr.sin_addr), ntohs(icmp->icmp_type), ntohs(icmp->icmp_id));
+	printf("%s received source routing packet from %s. ICMP type=%d, id=%d\n", buff, inet_ntoa(senderAddr.sin_addr), icmp->icmp_type, ntohs(icmp->icmp_id));
 	if (ntohs(icmp->icmp_id) != ICMPID) {
 		return;
 	}
