@@ -472,8 +472,12 @@ void processRtResponse(char *ptr, ssize_t len, SockAddrIn senderAddr)
 
 	time_t ticks = time(NULL);
     snprintf(buff, sizeof(buff), "%.24s\r\n", ctime(&ticks));
-
-	printf("%s received source routing packet from %s.icmp type=%d, id=%d\n", buff, inet_ntoa(senderAddr.sin_addr), ntohs(icmp->icmp_type), ntohs(icmp->icmp_id));
+	struct hostent *hptr;
+	//printf("%s received source routing packet from %s.icmp type=%d, id=%d\n", buff, inet_ntoa(senderAddr.sin_addr), ntohs(icmp->icmp_type), ntohs(icmp->icmp_id));
+	if((hptr = gethostbyaddr(&(senderAddr.sin_addr), sizeof (senderAddr.sin_addr), AF_INET)) == NULL)
+        err_quit ( "gethostbyaddress error");            
+	printf("%s received source routing packet from %s. icmp type=%d, id=%d\n", buff, hptr->h_name, ntohs(icmp->icmp_type), ntohs(icmp->icmp_id));
+	
 	if (ntohs(icmp->icmp_id) != ICMPID) {
 		return;
 	}
