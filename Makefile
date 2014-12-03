@@ -13,8 +13,8 @@ prhwaddrs.o: prhwaddrs.c
 #get_ifi_info_plus.o: get_ifi_info_plus.c
 #	${CC} ${CFLAGS} -c get_ifi_info_plus.c ${UNP}
 
-tour: tour.o
-	${CC} ${FLAGS} -o $@ tour.o ${LIBS}
+tour: tour.o get_hw_addrs.o
+	${CC} ${FLAGS} -o $@ tour.o get_hw_addrs.o ${LIBS}
 
 clean:
 	rm *.o tour 
