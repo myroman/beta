@@ -1,6 +1,8 @@
-
 #include "arp.h"
-
+#include <linux/if_packet.h>
+#include <linux/if_ether.h>
+#define OUR_PROTO 1925
+#define UNIX_FILE "ARPUnixFile"
 //This is the pointer to the set IP to hardware address pairs of eth0
 Set *headSet = NULL;
 Set *tailSet = NULL;
@@ -108,10 +110,44 @@ void testCacheEntry(){
 
 }
 
+int createPFPacket(){
+	int sd;
+	if((sd = socket(PF_PACKET, SOCK_RAW, htons(OUR_PROTO))) < 0){
+		printf("Creating PF_PACKET, SOCK RAW, %d, failed.\n", OUR_PROTO);
+		return -1;
+	}
+	debug("Successfuly created PF_PACKET Socket. Socket Descriptor: %d, Protocol Number: %d", sd, OUR_PROTO);
+	return sd;
+}
+
+int createUnixSocket(){
+	unsigned int s;
+	struct sockaddr_un local;
+	int len;
+
+	s = socket(AF_UNIX, SOCK_STREAM, 0);
+	if(s == -1){
+		printf("Error when creating Unix Domain socket. Errno: %s\n", strerror(errno));
+		return -1;		
+	}
+
+	local.sun_family = AF_UNIX;
+	strcpy(local.sun_path,UNIX_FILE);
+	unlink(local.sun_path);
+	len = strlen(local.sun_path) + sizeof(local.sun_family);
+	int ret = bind(s, (struct sockaddr *)&local, len);
+	if(ret == -1){
+		printf("Error when creating Unix Domain socket. Errno: %s\n", strerror(errno));
+		return -1;
+	}
+	debug("Successfully created Unix Socket File. Socket Descriptor: %d\n", s);
+	return s;
+}
 //No command line arguments are passed into this executable
 //runs on every VM [0-10]
 int main (){
-	
+	int ret;
+	int pf_fd, unix_fd;
 	//Explore interfaces and build a set of eth0 pairs found
 	exploreInterfaces();
 
@@ -119,6 +155,20 @@ int main (){
 	//		PF_PACKET of type SOCK_RAW
 	//		Unix domain of type sock stream listening socket bound to a well 
 	// 		sunpath file 
+	pf_fd = createPFPacket();
+	if(pf_fd == -1){
+		freeSet();
+		return -1;
+	}
+	unix_fd = createUnixSocket();
+	if(unix_fd == -1){
+		freeSet();
+		return -1;
+	}
+
+	//TODO: Select on unix_fd and pf_fd 
+
+	
 
 	//TODO: remove the funciton call below it is for testing purposes only
 	testCacheEntry();
