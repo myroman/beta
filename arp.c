@@ -96,6 +96,13 @@ int exploreInterfaces(){
 void testCacheEntry(){
 	insertCacheEntry(headSet->ip, headSet->hw_addr, 1, 2, 3, &headCache, &tailCache);
 	printCacheEntries(headCache);
+	CacheEntry * test = findCacheEntry(headSet->ip, headSet->hw_addr,headCache);
+	if(test == NULL){
+		debug("NULL");
+	}
+	else{
+		debug("FOUND Entry");
+	}
 }
 
 //No command line arguments are passed into this executable

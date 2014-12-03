@@ -1,6 +1,7 @@
 #include "cacheEntry.h"
 #include "misc.h"
 
+
 int insertCacheEntry(in_addr_t ip, char *hw, int ifindex, unsigned int hatype, int unix_fd, CacheEntry **headCache, CacheEntry **tailCache){
 	int ret = 0;
 
@@ -35,7 +36,10 @@ CacheEntry * findCacheEntry(in_addr_t ip, char* hw, CacheEntry *headCache){
 	CacheEntry * ptr = headCache;
 	while(ptr != NULL){
 		if(ptr->ip == ip){
-			if(strcmp(ptr->if_haddr, hw) == 0){
+			debug("IP match");
+			int val = memcmp(hw, ptr->if_haddr, IF_HADDR);
+			if( val == 0){
+				debug("Str match");
 				return ptr;
 			}
 		}

@@ -2,6 +2,7 @@
 #define __CACHE_ENTRY_H
 #include "unp.h"
 #include "misc.h"
+#include "debug.h"
 
 typedef struct CacheEntry CacheEntry;
 struct CacheEntry{ //Key is ip and if_haddr together
