@@ -276,6 +276,8 @@ void getNodeName(){
             strcpy(myNodeName,hptr->h_name);
             //strcpy(myNodeName, myNodeIP);//copy the string into string
     }
+    //TODO: ntohl the 32 bit ip
+    ip_list[0].s_addr = ntohl(ip_list[0].s_addr);
     debug("%s %s", myNodeName, myNodeIP);
     debug("%d: %s", 0, inet_ntoa((ip_list[0])));
 }
@@ -290,7 +292,9 @@ void fillIpList(int argc, char **argv){
 		char str[INET_ADDRSTRLEN];
 		inet_ntop(hptr->h_addrtype, hptr-> h_addr_list[0],str, sizeof(str));
 		debug("%s", str);
+		//TODO: store as network byte order
 		ip_list[i].s_addr =  inet_addr(str);
+		ip_list[i].s_addr = htonl(ip_list[i].s_addr);
 		info("%d: %s", i, argv[i]);
 	}
 	for(i = 1; i < argc; i++){
@@ -316,6 +320,9 @@ int main(int argc, char ** argv){
 		sendIpRaw(rtSocket);
 	}
 	dispatch(rtSocket);	
+
+	free(ip_list);
+	free(myNodeName);
 	return 0;
 }
 
@@ -331,6 +338,7 @@ uint16_t checksum (uint16_t *addr, int len)
     sum += *w++;
     nleft -= sizeof (uint16_t);
   }
+
 
   if (nleft == 1) {
     *(uint8_t *) (&answer) = *(uint8_t *) w;
@@ -348,7 +356,6 @@ char *
 allocate_strmem (int len)
 {
   void *tmp;
-
   if (len <= 0) {
     fprintf (stderr, "ERROR: Cannot allocate memory because len = %i in allocate_strmem().\n", len);
     exit (EXIT_FAILURE);
