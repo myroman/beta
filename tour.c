@@ -63,6 +63,8 @@ void getNodeName(){
             strcpy(myNodeName,hptr->h_name);
             //strcpy(myNodeName, myNodeIP);//copy the string into string
     }
+    //TODO: ntohl the 32 bit ip
+    ip_list[0].s_addr = ntohl(ip_list[0].s_addr);
     debug("%s %s", myNodeName, myNodeIP);
     debug("%d: %s", 0, inet_ntoa((ip_list[0])));
 }
@@ -77,7 +79,9 @@ void fillIpList(int argc, char **argv){
 		char str[INET_ADDRSTRLEN];
 		inet_ntop(hptr->h_addrtype, hptr-> h_addr_list[0],str, sizeof(str));
 		debug("%s", str);
+		//TODO: store as network byte order
 		ip_list[i].s_addr =  inet_addr(str);
+		ip_list[i].s_addr = htonl(ip_list[i].s_addr);
 		info("%d: %s", i, argv[i]);
 	}
 	for(i = 1; i < argc; i++){
@@ -104,6 +108,7 @@ int main(int argc, char ** argv){
 
 
 
-
+	free(ip_list);
+	free(myNodeName);
 	return 0;
 }

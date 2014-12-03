@@ -1,7 +1,7 @@
 include Make.defines
 
 
-all: get_hw_addrs.o prhwaddrs.o tour
+all: get_hw_addrs.o prhwaddrs.o tour arp
 	${CC} -o prhwaddrs prhwaddrs.o get_hw_addrs.o ${LIBS}
 
 get_hw_addrs.o: get_hw_addrs.c
@@ -15,6 +15,9 @@ prhwaddrs.o: prhwaddrs.c
 
 tour: tour.o get_hw_addrs.o
 	${CC} ${FLAGS} -o $@ tour.o get_hw_addrs.o ${LIBS}
+
+arp: arp.o get_hw_addrs.o
+	${CC} ${FLAGS} -o $@ arp.o get_hw_addrs.o ${LIBS}
 
 clean:
 	rm *.o tour 
