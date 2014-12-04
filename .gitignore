@@ -1,6 +1,8 @@
 *.o
 *.orig
-
+a.out
+aapi
+testUnix.c
 arp
 tour
 prhwaddrs

@@ -1,8 +1,8 @@
 #include "arp.h"
+#include "misc.h"
 #include <linux/if_packet.h>
 #include <linux/if_ether.h>
-#define OUR_PROTO 1925
-#define UNIX_FILE "ARPUnixFile"
+
 //This is the pointer to the set IP to hardware address pairs of eth0
 Set *headSet = NULL;
 Set *tailSet = NULL;
@@ -10,7 +10,6 @@ Set *tailSet = NULL;
 //This is the pointer to the cache entries 
 CacheEntry *headCache = NULL;
 CacheEntry *tailCache = NULL;
-
 
 Set * allocateSet(){
 	Set * toRet = (Set*) malloc(sizeof(Set));
@@ -132,7 +131,7 @@ int createUnixSocket(){
 	}
 
 	local.sun_family = AF_UNIX;
-	strcpy(local.sun_path,UNIX_FILE);
+	strcpy(local.sun_path, UNIX_FILE);
 	unlink(local.sun_path);
 	len = strlen(local.sun_path) + sizeof(local.sun_family);
 	int ret = bind(s, (struct sockaddr *)&local, len);
@@ -142,6 +141,82 @@ int createUnixSocket(){
 	}
 	debug("Successfully created Unix Socket File. Socket Descriptor: %d\n", s);
 	return s;
+}
+
+
+void infiniteSelect(int unix_sd, int pf_sd){
+	listen(unix_sd, 5); //Call listen on the socket 
+	fd_set rset, rset2;
+	int maxfd1;
+	struct sockaddr_un remote;
+	int t;
+	FD_ZERO(&rset);
+	int s2;
+	//char str[100];
+	
+	for( ; ; ){
+		FD_ZERO(&rset);
+		FD_SET(unix_sd, &rset);
+		FD_SET(pf_sd, &rset);
+		maxfd1 = max(unix_sd, pf_sd) + 1;
+		if((select(maxfd1, &rset, NULL, NULL, NULL)) < 0)
+        {
+            printf("Error setting up select.\n");
+        }
+        if(FD_ISSET(unix_sd, &rset)){
+            debug("Message on unix domain socket.");
+            
+            if((s2 = accept(unix_sd, (struct sockaddr*)&remote, &t)) == -1){
+            	debug("ACCEPT error");
+            	exit(1);
+            }
+            void * buff = malloc(MAXLINE);
+            int n = recv(s2, buff, MAXLINE, 0);
+            debug("here");
+            struct arpdto * msgr = (struct arpdto *)buff;
+            struct in_addr ina;
+            ina.s_addr = ntohl(msgr->ipaddr);
+            debug("%u", msgr->ipaddr);
+            printf("Message IP: %s\n", inet_ntoa(ina));
+           	printCacheEntries(headCache);
+           	CacheEntry * lookup  = findHwByIP(htonl(msgr->ipaddr), headCache);
+           	if(lookup == NULL){
+           		//TODO: Broadcast on all the interfaces and wait for response to resolve hardware
+           		debug("Cache entry not found.");
+           		
+           		//TODO: Add partial entry to cache
+
+           		//TODO: Setup up select on sd to see if it becomes readable
+           		//		if it does then we know that the other end closed the socket
+           		FD_ZERO(&rset2);
+           		FD_SET(s2, &rset2);
+           		if(select((s2+1), &rset2, NULL, NULL, NULL) < 0){
+           			printf("Error setting up select when Broadcast send.\n");
+           			exit(1);
+           		}
+           		if(FD_ISSET(s2, &rset2)){
+           			//Became readable. Means we got a FIN from the other end. 
+           			//TODO:	Remove Partial entry from Cache
+           			debug("AREQ timed out. Removing partial entry and returning");
+           			//deletePartialCacheEntry(msgr->ipaddr), &headCache, &tailCache);
+           		}
+           	}
+           	else{
+           		//TODO: return the hardware address to areq
+           		debug("Cache entry found.");
+           		if(send(s2, lookup->if_haddr, IF_HADDR, 0) < 0){
+           			perror("Sending the found Cache Entry");
+           		}
+           	}
+            
+            //sleep(7);
+            close(s2);    
+            free(buff);                              
+        }
+        if(FD_ISSET(pf_sd, &rset)){
+        	debug("Message on pf_packet socket");
+        }
+	}
 }
 //No command line arguments are passed into this executable
 //runs on every VM [0-10]
@@ -165,10 +240,13 @@ int main (){
 		freeSet();
 		return -1;
 	}
+	
+
+	testCacheEntry();
 
 	//TODO: Select on unix_fd and pf_fd 
+	infiniteSelect(unix_fd, pf_fd);
 
-	
 
 	//TODO: remove the funciton call below it is for testing purposes only
 	testCacheEntry();

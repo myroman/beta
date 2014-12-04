@@ -12,7 +12,7 @@ int insertCacheEntry(in_addr_t ip, char *hw, int ifindex, unsigned int hatype, i
 		return ret;
 	}
 
-	newEntry->ip = ip;
+	newEntry->ip = htonl(ip);
 	newEntry->sll_ifindex = ifindex;
 	newEntry->sll_hatype = hatype;
 	newEntry->unix_fd = unix_fd;
@@ -32,7 +32,47 @@ int insertCacheEntry(in_addr_t ip, char *hw, int ifindex, unsigned int hatype, i
 	ret = 1;
 	return ret;
 }
+
+void deletePartialCacheEntry(in_addr_t ip, CacheEntry ** headCache, CacheEntry ** tailCache){
+	
+	ip = htonl(ip);
+	CacheEntry *ptr = *headCache;
+	while(ptr != NULL){
+		if(ptr->ip == ip){ //May need to make sure the MAC address field is not filled in here as well
+			//HEAD
+			if(ptr->left == NULL){
+				if(ptr->right == NULL){
+					*headCache = NULL;
+					*tailCache = NULL;
+				}
+				else{
+					*headCache = ptr->right;
+				}
+			}	
+			//TAIL
+			if(ptr->right == NULL){
+				if(ptr->left == NULL){
+					*headCache = NULL;
+					*tailCache = NULL;
+				}
+				else{
+					*tailCache = ptr->left;
+				}
+			}
+			//MIDDLE
+			if(ptr->right != NULL && ptr->left != NULL){
+				ptr->left->right = ptr->right;
+				ptr->right->left = ptr->left;
+			}
+			free(ptr);
+			return;
+		}
+		ptr = ptr->right;
+	}
+	return;
+}
 CacheEntry * findCacheEntry(in_addr_t ip, char* hw, CacheEntry *headCache){
+	ip = htonl(ip);
 	CacheEntry * ptr = headCache;
 	while(ptr != NULL){
 		if(ptr->ip == ip){
@@ -42,6 +82,19 @@ CacheEntry * findCacheEntry(in_addr_t ip, char* hw, CacheEntry *headCache){
 				//debug("Str match");
 				return ptr;
 			}
+		}
+		ptr = ptr->right;
+	}
+	return NULL;
+}
+
+
+CacheEntry * findHwByIP(in_addr_t ip, CacheEntry * headCache){
+	ip = htonl(ip);
+	CacheEntry *ptr = headCache;
+	while(ptr != NULL){
+		if(ptr->ip == ip){
+			return ptr;
 		}
 		ptr = ptr->right;
 	}

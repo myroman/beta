@@ -1,7 +1,7 @@
 include Make.defines
 
 
-all: get_hw_addrs.o prhwaddrs.o tour arp
+all: aapi get_hw_addrs.o prhwaddrs.o tour arp 
 	${CC} -o prhwaddrs prhwaddrs.o get_hw_addrs.o ${LIBS}
 
 get_hw_addrs.o: get_hw_addrs.c
@@ -28,5 +28,10 @@ misc.o: misc.c
 cacheEntry.o: cacheEntry.c misc.o
 	${CC} ${FLAGS} -c cacheEntry.c misc.o ${UNP}
 
+aapi.o: aapi.c misc.o
+	${CC} ${FLAGS} -c aapi.c misc.o ${UNP}	
+aapi: aapi.o
+	${CC} ${FLAGS} -o $@ aapi.o misc.o ${LIBS}
+
 clean:
-	rm *.o tour 
+	rm *.o tour arp
