@@ -177,7 +177,7 @@ void infiniteSelect(int unix_sd, int pf_sd){
             struct in_addr ina;
             ina.s_addr = ntohl(msgr->ipaddr);
             debug("%u", msgr->ipaddr);
-            printf("Message IP: %s\n", inet_ntoa(ina));
+            printf("Message IP: %s\n IFIndex: %d, HW Type: %u , HW Len: %u\n", inet_ntoa(ina), ntohl(msgr->ifindex), ntohs(msgr->hatype), msgr->halen);
            	printCacheEntries(headCache);
            	CacheEntry * lookup  = findHwByIP(htonl(msgr->ipaddr), headCache);
            	if(lookup == NULL){

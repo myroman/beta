@@ -106,7 +106,7 @@ void printCacheEntries(CacheEntry *headCache){
 	printf("*** Cache Entries ***\n");
 	while(ptr != NULL){
 		struct in_addr toPrint;
-		toPrint.s_addr = ptr->ip;
+		toPrint.s_addr = ntohl(ptr->ip);
 		printf("IP: %s , ", inet_ntoa(toPrint));
 		printf("HW: ");
 		printHardware(ptr->if_haddr);

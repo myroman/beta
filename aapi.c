@@ -11,6 +11,7 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
 	//		Well known file name. Send the IP address and the other three parameters
 	//		to ARP
 	int sd, t, len;
+	int ret = 0;
     struct sockaddr_un remote;
     char str[100];
     //Setup ARP Unix domain socket
@@ -38,6 +39,9 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
 	struct arpdto dto;
 	bzero(&dto, bufSize);
 	dto.ipaddr = htonl(s_in->sin_addr.s_addr);
+	dto.ifindex = htonl(HWaddr->sll_ifindex);
+	dto.hatype = htons(HWaddr->sll_hatype);
+	dto.halen = HWaddr->sll_halen;
 	memcpy(buffer, &dto, bufSize);
 	
 
@@ -69,31 +73,37 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
 		debug("API responded");
 		//TODO:	recv the contents and display them
 		int r;
-		char h[MAXLINE];
-		if((r= recv(sd, h, MAXLINE, 0 ))  > 0){
+		char h[8];
+		if((r= recv(sd, h, 8, 0 ))  > 0){
 			
-			printHardware(h);
-			debug("Received");
-		}
-		else{
-			debug("received less than zero.");
+			//Copy the contents into hwaddr struct
+			memcpy(&(HWaddr->sll_addr), h, 8);
+			printf("AREQ: Received message from ARP. IP address :%s, Hardware Address :", inet_ntoa(s_in->sin_addr));
+			printHardware(HWaddr->sll_addr);
+			printf("\n");
+			ret = 1;
+			close(sd);
+		
 		}
 	}
 	else{
 		debug("API didnt respond");
+		ret = -1;
 		close(sd);
 	}
 
-
-
 	//TODO: free buffer;
 	free(buffer);
+	return ret;
 }
 
 int main(){
 	struct sockaddr_in s;
 	s.sin_addr.s_addr = inet_addr("10.255.5.149");
 	struct hwaddr h;
+	h.sll_ifindex = 3;
+	h.sll_hatype = 5;
+	h.sll_halen = 1;
 
 	areq((SA*)&s, sizeof(s), &h);
 }

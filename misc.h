@@ -33,6 +33,9 @@ struct hwaddr {
 
 struct arpdto {
 	in_addr_t ipaddr;
+	int ifindex;
+	unsigned short hatype;
+	unsigned char  halen;
 };
 
 
