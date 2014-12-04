@@ -44,3 +44,9 @@ void printHardware(char * hw){
 		} while (--i > 0);
 	}
 }
+
+int getmax(int a, int b) {
+	if (a >= b)
+		return a;
+	return b;	
+}
