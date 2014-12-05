@@ -34,10 +34,12 @@ int createRtSocket();
 int createPgSocket();
 int createPfPacketSocket();
 int sendRtMsg(int sd);
-void processRtResponse(char *ptr, ssize_t len, SockAddrIn senderAddr, int pfpSocket);
-void processPgResponse(char *buf, ssize_t len, SockAddrIn senderAddr, int addrlen);
+void processRtResponse(void *ptr, ssize_t len, SockAddrIn senderAddr, int pfpSocket);
+void processPgResponse(void *buf, ssize_t len, SockAddrIn senderAddr, int addrlen);
 void sendPing();
 void tv_sub(struct timeval *out, struct timeval *in);
+
+int VMcount;
 struct in_addr * ip_list;
 char* myNodeIP;
 char* myNodeName;
@@ -174,12 +176,39 @@ int sendRtMsg(int sd){
 	}
 	freeaddrinfo (res);	
 
+
+	debug("VMcount %d", VMcount);
+	datalen = sizeof(struct tourdata) + (VMcount * 4);
+	debug("datalen = %d", datalen);
+	
+	struct tourdata td;
+	td.index = htonl(0);
+	td.nodes_in_tour = htonl(VMcount);
+	td.mult_ip = inet_addr(MULTICAST_IP);
+	td.mult_port = htons(MULTICAST_PORT);
+	memcpy(data, &td, sizeof(struct tourdata));
+
+	void * ptr = data;
+	ptr = ptr + sizeof(struct tourdata);
+	int i;
+	//struct in_addr i_a;
+	for(i = 1; i <=VMcount; i++){
+		//debug("%u", ip_list[i]);
+		memcpy(ptr, &ip_list[i], 4);
+		//i_a.s_addr = ip_list[i];
+		debug("%s", inet_ntoa(ip_list[i]));
+		struct in_addr * temp2 = (struct in_addr *) ptr;
+		//i_a.s_addr = *temp2;
+		debug("%s", inet_ntoa(*temp2));
+		//debug("%u", *temp2);
+		ptr = ptr + 4;
+	}
 	// ICMP data
-	datalen = 4;
-	data[0] = 'T';
-	data[1] = 'e';
-	data[2] = 's';
-	data[3] = 't';
+	//datalen = 4;
+	//data[0] = 'T';
+	//data[1] = 'e';
+	//data[2] = 's';
+	//data[3] = 't';
 
 	// IPv4 header
 
@@ -310,7 +339,7 @@ void fillIpList(int argc, char **argv){
 		hptr = gethostbyname(argv[i]);
 		char str[INET_ADDRSTRLEN];
 		inet_ntop(hptr->h_addrtype, hptr-> h_addr_list[0],str, sizeof(str));
-		debug("%s", str);
+		//debug("%s", str);
 		//TODO: store as network byte order
 		ip_list[i].s_addr =  inet_addr(str);
 		ip_list[i].s_addr = htonl(ip_list[i].s_addr);
@@ -323,7 +352,7 @@ void fillIpList(int argc, char **argv){
 
 int main(int argc, char ** argv){
 	
-	int i, VMcount;
+	int i;//, VMcount;
 	VMcount = argc - 1;
 	//0th index will house the IP of the current node that it is running on
 	ip_list= (struct in_addr *) malloc(sizeof(struct in_addr) * (VMcount + 1));
@@ -350,7 +379,7 @@ void dispatch(int rtSocket, int pgSocket, int pfpSocket) {
 	fd_set set;
 	int maxfd;
 	struct timeval tv;	
-	char* buf = malloc(MAXLINE);
+	void* buf = malloc(MAXLINE);
 	SockAddrIn senderAddr;	
 	int addrLen = sizeof(senderAddr),
 	res = 0;
@@ -404,7 +433,7 @@ void dispatch(int rtSocket, int pgSocket, int pfpSocket) {
 	free(buf);
 }
 
-void processRtResponse(char *ptr, ssize_t len, SockAddrIn senderAddr, int pfpSocket)
+void processRtResponse(void *ptr, ssize_t len, SockAddrIn senderAddr, int pfpSocket)
 {
 	int	icmplen;
 	struct timeval	*tvsend;
@@ -430,7 +459,7 @@ void processRtResponse(char *ptr, ssize_t len, SockAddrIn senderAddr, int pfpSoc
 	printf("%s received source routing packet from %s. icmp type=%d, id=%d,imcplen=%d\n", buff, hptr->h_name, icmp->icmp_type, ntohs(icmp->icmp_id), icmplen);	
 	sendPing();
 }
-void processPgResponse(char *ptr, ssize_t len, SockAddrIn senderAddr, int addrlen) {
+void processPgResponse(void *ptr, ssize_t len, SockAddrIn senderAddr, int addrlen) {
 	int icmplen;
 	struct ip *ip = (struct ip *) ptr;		/* start of IP header */	
 	
