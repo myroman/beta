@@ -18,7 +18,14 @@ struct Set{
 	Set * next;
 };
 
-void sendArpRequest(int pfSocket);
+typedef struct myarphdr ArpHdr;
+
+void sendArp(int pfSocket, in_addr_t srcIp, in_addr_t destIp, int op);
+void sendArpPacket(int pfSocket, ArpHdr ahdr);
+void makeMacBroadcast(unsigned char addr[IF_HADDR]);
+int handleIncomingArpMsg(int pfSocket, void* buf);
+void fillMyMac(int pfSocket, unsigned char macAddr[IF_HADDR]);
+void sendArpPacket(int pfSocket, struct myarphdr ahdr);
 
 struct myarphdr {
 	uint16_t ar_id; // our unique ID
@@ -33,4 +40,7 @@ struct myarphdr {
 	unsigned char ar_tha[ETH_ALEN];       /* target hardware address      */
 	unsigned char ar_tip[4];              /* target IP address            */
 };
+
+#define ARP_REQ 1
+#define ARP_REP 2
 #endif
