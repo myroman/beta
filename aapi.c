@@ -4,8 +4,6 @@
 #include <linux/if_packet.h>
 #include <linux/if_ether.h>
 
-
-
 int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr){
 	//TODO: Create the unix domain socket of type sock stream and connect to ARP 
 	//		Well known file name. Send the IP address and the other three parameters
@@ -17,7 +15,7 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
     //Setup ARP Unix domain socket
     if ((sd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
         perror("socket");
-        exit(1);
+        return 0;
     }
 
 
@@ -28,7 +26,7 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
     if (connect(sd, (struct sockaddr *)&remote, len) == -1) {
         
         perror("connect");
-        exit(1);
+        return 0;
     }
 
 
@@ -51,7 +49,7 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
 	if( (bytesSent = send(sd, buffer, bufSize, 0)) == -1){
 		printf("Error sending message to ARP Unix Domain Socket.\n");
 		free(buffer);
-		return;		
+		return 0;		
 	}
 
 	//TODO: after sending we should block on receive. Wait for a timeout on that socket
@@ -96,14 +94,16 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
 	free(buffer);
 	return ret;
 }
-
+/*
 int main(){
 	struct sockaddr_in s;
-	s.sin_addr.s_addr = inet_addr("127.0.0.1");//"10.255.5.149");
+	s.sin_addr.s_addr = inet_addr("10.0.2.15");//"10.255.5.149");
 	struct hwaddr h;
 	h.sll_ifindex = 3;
 	h.sll_hatype = 5;
 	h.sll_halen = 1;
 
 	areq((SA*)&s, sizeof(s), &h);
+	
 }
+*/

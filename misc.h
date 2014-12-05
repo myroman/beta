@@ -12,12 +12,17 @@ int getmax(int a, int b);
 
 #define MY_IP_ID 241
 #define ETH_PROTO 0x2457
+#define ARP_PROTO 0x923
 
 #define RT_ICMPID 1257
 #define PING_ICMPID 1258
 #define	IF_HADDR	 6	/* same as IFHWADDRLEN in <net/if.h> */
+#define IP_ADDR_LEN 4
 #define ROMAN_IP_TEST "10.0.2.15\0"
 #define IP4_HDRLEN 20         // IPv4 header length
+#define ETH_HDRLEN 14  // Ethernet header length
+#define ARP_HDRLEN 30 // ARP header length
+#define ARP_ID 52047
 
 #define ECHO_R_ICMP_DATALEN 56
 
