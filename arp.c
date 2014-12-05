@@ -33,6 +33,7 @@ Set *tailSet = NULL;
 //This is the pointer to the cache entries 
 CacheEntry *headCache = NULL;
 CacheEntry *tailCache = NULL;
+in_addr_t myIpAddr = 0;
 
 Set * allocateSet(){
 	Set * toRet = (Set*) malloc(sizeof(Set));
@@ -48,7 +49,8 @@ Set * allocateSet(){
 	else{
 		debug("Code shouldn't execute");
 		return NULL;
-	}
+	}	
+
 	return toRet;
 }
 void freeSet(){
@@ -104,7 +106,7 @@ int exploreInterfaces(){
 				//Set test;
 				Set * toInsert = allocateSet();
 				//assign the ip of the set
-				toInsert->ip = inet_addr(ip);
+				myIpAddr = toInsert->ip = inet_addr(ip);								
 
 				//assign the hw_Addr of the set
 				memcpy((toInsert->hw_addr), hwa->if_haddr, IF_HADDR); 
@@ -114,7 +116,7 @@ int exploreInterfaces(){
 
 			}
 		}
-	}
+	}	
 }
 
 void testCacheEntry(){
@@ -134,11 +136,11 @@ void testCacheEntry(){
 
 int createPFPacket(){
 	int sd;
-	if((sd = socket(PF_PACKET, SOCK_RAW, htons(OUR_PROTO))) < 0){
-		printf("Creating PF_PACKET, SOCK RAW, %d, failed.\n", OUR_PROTO);
+	if((sd = socket(PF_PACKET, SOCK_RAW, htons(ARP_PROTO))) < 0){
+		printf("Creating PF_PACKET, SOCK RAW, %d, failed.\n", ARP_PROTO);
 		return -1;
 	}
-	debug("Successfuly created PF_PACKET Socket. Socket Descriptor: %d, Protocol Number: %d", sd, OUR_PROTO);
+	debug("Successfuly created PF_PACKET Socket. Socket Descriptor: %d, Protocol Number: %d", sd, ARP_PROTO);
 	return sd;
 }
 
@@ -174,16 +176,22 @@ void infiniteSelect(int unix_sd, int pf_sd){
 	struct sockaddr_un remote;
 	int t;
 	FD_ZERO(&rset);
-	int s2;
-	//char str[100];
+	int s2 = -1;
+	void* buff = malloc(MAXLINE);	
 	
 	for( ; ; ){
 		FD_SET(unix_sd, &rset);
 		FD_SET(pf_sd, &rset);
-		maxfd1 = max(unix_sd, pf_sd) + 1;
-		if((select(maxfd1, &rset, NULL, NULL, NULL)) < 0)
-        {
+		maxfd1 = max(unix_sd, pf_sd);			
+
+		if((select(maxfd1 + 1, &rset, NULL, NULL, NULL)) < 0) {
             printf("Error setting up select.\n");
+        }
+
+        if(FD_ISSET(pf_sd, &rset)) {    	
+		    FD_CLR(pf_sd, &rset);
+
+    		handleIncomingArpMsg(pf_sd, buff);
         }
         if(FD_ISSET(unix_sd, &rset)) {
         	FD_CLR(unix_sd, &rset);
@@ -194,17 +202,15 @@ void infiniteSelect(int unix_sd, int pf_sd){
             	debug("ACCEPT error");
             	exit(1);
             }
-            void * buff = malloc(MAXLINE);
+            bzero(buff, MAXLINE);
             int n = recv(s2, buff, MAXLINE, 0);
             struct arpdto * msgr = (struct arpdto *)buff;
             struct in_addr ina;
-            ina.s_addr = ntohl(msgr->ipaddr);
-            debug("%u", msgr->ipaddr);
-            printf("Message IP: %s\n IFIndex: %d, HW Type: %u , HW Len: %u\n", inet_ntoa(ina), ntohl(msgr->ifindex), ntohs(msgr->hatype), msgr->halen);
-           	
-           	CacheEntry * lookup  = findHwByIP(htonl(msgr->ipaddr), headCache);
+            ina.s_addr = msgr->ipaddr;
+            printf("Message IP: %s \n", inet_ntoa(ina));
+           	CacheEntry * lookup  = findHwByIP(msgr->ipaddr, headCache);
            	if(lookup == NULL){
-           		sendArpRequest(pf_sd);
+           		sendArp(pf_sd, myIpAddr, msgr->ipaddr, ARP_REQ);           		
            		
            		debug("Cache entry not found.");
            		
@@ -214,25 +220,23 @@ void infiniteSelect(int unix_sd, int pf_sd){
            		printCacheEntries(headCache);
            		//TODO: Setup up select on sd to see if it becomes readable
            		//		if it does then we know that the other end closed the socket
-           		FD_ZERO(&rset2);
-           		FD_SET(s2, &rset2);
-           		FD_SET(pf_sd, &rset2);
-           		int maxdf2 = max(s2, pf_sd) + 1;
-           		if(select(maxdf2, &rset2, NULL, NULL, NULL) < 0){
+           		//FD_ZERO(&rset2);
+           		//FD_SET(s2, &rset2);
+           		//FD_SET(pf_sd, &rset2);
+           		//int maxdf2 = max(s2, pf_sd) + 1;
+           		//printf("Waiting for replies or client termination\n");
+           		/*if(select(maxdf2, &rset2, NULL, NULL, NULL) < 0){
            			printf("Error setting up select when Broadcast send.\n");
            			exit(1);
            		}
+           		debug("Received something!");
            		if(FD_ISSET(s2, &rset2)){
            			//Became readable. Means we got a FIN from the other end. 
            			//TODO:	Remove Partial entry from Cache
            			debug("AREQ timed out. Removing partial entry and returning");
            			deletePartialCacheEntry(msgr->ipaddr, &headCache, &tailCache);
            			printCacheEntries(headCache);
-           		}
-           		if (FD_ISSET(pf_sd, &rset2)) {
-           			FD_CLR(pf_sd, &rset2);
-           			goto pfRecv; // dont' handle it in inner select to avoid duplicate logic
-           		}
+           		}*/
            	}
            	else{
            		//TODO: return the hardware address to areq
@@ -243,21 +247,15 @@ void infiniteSelect(int unix_sd, int pf_sd){
            	}
             
             //sleep(7);
-            close(s2);    
-            free(buff);                              
-        }
-
-        if(FD_ISSET(pf_sd, &rset)) {    	
-    pfRecv:	debug("Message on pf_packet socket");
-    		FD_CLR(pf_sd, &rset);
-
-    		handleIncomingArpMsg(pf_sd);
-        }
+            close(s2);                                            
+        }        
 	}
+
+	free(buff);  
 }
 //No command line arguments are passed into this executable
 //runs on every VM [0-10]
-int main (){
+int main(){
 	int ret;
 	int pf_fd, unix_fd;
 	//Explore interfaces and build a set of eth0 pairs found
@@ -293,84 +291,58 @@ int main (){
 	return 0;
 }
 
-void sendArpRequest(int pfSocket) {
+void sendArp(int pfSocket, in_addr_t srcIp, in_addr_t destIp, int op) {
+	ArpHdr ahdr;
+	bzero(&ahdr, sizeof(ahdr));
+	ahdr.ar_hrd = htons(1);
+	ahdr.ar_pro = htons(0x0800);// map to IP
+	ahdr.ar_hln = IF_HADDR;
+	ahdr.ar_pln = IP_ADDR_LEN;
+	ahdr.ar_op = htons(op);
+	ahdr.ar_id = htons(ARP_ID);
+	unsigned char src_mac[IF_HADDR];
+	fillMyMac(pfSocket, src_mac);
+	memcpy(ahdr.ar_sha, src_mac, ETH_ALEN);
+	memcpy(ahdr.ar_sip, &srcIp, IP_ADDR_LEN);
+	memcpy(ahdr.ar_tip, &destIp, IP_ADDR_LEN);
+	
+	sendArpPacket(pfSocket, ahdr);
+}
+
+
+void sendArpPacket(int pfSocket, ArpHdr ahdr) {
 	char *interface = "eth0\0";
-	int sd, status;
-	struct ifreq ifr;
-	struct sockaddr_ll device;
-	uint8_t *src_mac, *dst_mac, *ether_frame;
-	char *src_ip = malloc(INET_ADDRSTRLEN), 
-		*dst_ip = malloc(INET_ADDRSTRLEN);
-	strcpy (src_ip, "130.245.156.22\0");
-	strcpy (dst_ip, "130.245.156.21\0");
-	struct in_addr srcAddr, dstAddr;	
+	void *ether_frame;
+	unsigned char dst_mac[IF_HADDR];
 
-	if ((status = inet_pton (AF_INET, src_ip, &srcAddr)) != 1) {
-		fprintf (stderr, "inet_pton() failed.\nError message: %s", strerror (status));
-		exit (EXIT_FAILURE);
-	}
-
-	if ((status = inet_pton (AF_INET, dst_ip, &dstAddr)) != 1) {
-		fprintf (stderr, "inet_pton() failed.\nError message: %s", strerror (status));
-		exit (EXIT_FAILURE);
-	}
-
-	// Submit request for a socket descriptor to look up interface.
-	if ((sd = socket(PF_PACKET, SOCK_RAW, ARP_PROTO)) < 0) {
-		perror ("socket() failed to get socket descriptor for using ioctl() ");
-		return;
-	}
-
-	// Use ioctl() to look up interface name and get its MAC address.
-	memset (&ifr, 0, sizeof (ifr));
-	snprintf (ifr.ifr_name, sizeof (ifr.ifr_name), "%s", interface);
-	if (ioctl (sd, SIOCGIFHWADDR, &ifr) < 0) {
-		perror ("ioctl() failed to get source MAC address ");
-		return;
-	}
-	close (sd);
-
-	// Copy source MAC address.
-	memcpy (src_mac, ifr.ifr_hwaddr.sa_data, 6 * sizeof (uint8_t));
-
-	// Find interface index from interface name and store index in
-	// struct sockaddr_ll device, which will be used as an argument of sendto().
+	makeMacBroadcast(dst_mac);
+	
+	printHardware(ahdr.ar_sha);
+	printf("to\n");
+	printHardware(dst_mac);
+	
+	struct sockaddr_ll device;	
 	memset (&device, 0, sizeof (device));
+	
 	if ((device.sll_ifindex = if_nametoindex (interface)) == 0) {
 		perror ("if_nametoindex() failed to obtain interface index ");
 		exit (EXIT_FAILURE);
 	}
-	// Fill out sockaddr_ll.
-	device.sll_family = AF_PACKET;
-	memcpy (device.sll_addr, src_mac, 6 * sizeof (uint8_t));
-	device.sll_halen = htons (6);
-
+	printf("Device ifindex:%d\n", device.sll_ifindex);
+	device.sll_family = htons(AF_PACKET);
+	device.sll_halen = htons (IF_HADDR);
+	device.sll_hatype = htons(ARPHRD_ETHER);	
+	memcpy (device.sll_addr, ahdr.ar_sha, IF_HADDR);//try set dest mac, but in ping.c we set src mac
+	
 	//Building Ethernet frame
-	ether_frame = malloc(IP_MAXPACKET);
+	ether_frame = malloc(ETH_HDRLEN + ARP_HDRLEN);
 	memcpy (ether_frame, dst_mac, IF_HADDR);
-	memcpy (ether_frame + IF_HADDR, src_mac, IF_HADDR);
+	memcpy ((void*)(ether_frame + IF_HADDR), ahdr.ar_sha, IF_HADDR);
 	struct ethhdr *eh = (struct ethhdr *)ether_frame;/*another pointer to ethernet header*/	 
 	eh->h_proto = htons(ARP_PROTO);
-	
-	// ARP header
-	struct myarphdr ahdr;
-	bzero(&ahdr, sizeof(ahdr));
-	ahdr.ar_hrd = htons(1);
-	ahdr.ar_pro = htons(0x0800);
-	ahdr.ar_hln = IF_HADDR;
-	ahdr.ar_pln = IP_ADDR_LEN;
-	ahdr.ar_op = htons(1);
-	ahdr.ar_id = htons(ARP_ID);
-	memcpy(ahdr.ar_sha, src_mac, ETH_ALEN);
-	memcpy(ahdr.ar_sip, &srcAddr.s_addr, IP_ADDR_LEN);
-	memcpy(ahdr.ar_tip, &dstAddr.s_addr, IP_ADDR_LEN);
 
-	//lookup after ar_tha
-	if ((sd = socket(PF_PACKET, SOCK_RAW, ARP_PROTO)) < 0) {
-		perror ("socket() failed ");
-		exit (EXIT_FAILURE);
-	}
 	memcpy (ether_frame + ETH_HDRLEN, &ahdr, ARP_HDRLEN);
+	
 	int bytesSent;
 	printf("Gonna send ARP\n");
 	if ((bytesSent = sendto(pfSocket, ether_frame, ETH_HDRLEN + ARP_HDRLEN, 0, (struct sockaddr *) &device, sizeof (device))) <= 0) {
@@ -379,35 +351,37 @@ void sendArpRequest(int pfSocket) {
 	}
 
 	free(ether_frame);
-	free(src_ip);
-	free(dst_ip);
 	printf("Sent %d bytes in ARP request\n", bytesSent);
 }
 
-int handleIncomingArpMsg(int pfSocket, in_addr_t myIpAddr, void* buf) {
+int handleIncomingArpMsg(int pfSocket, void* buf) {
 	int n;
 	struct sockaddr_ll senderAddr;
+	debug("Received on PF_PACKET");
 	int sz = sizeof(senderAddr);
 	if ((n = recvfrom(pfSocket, buf, MAXLINE, 0, (SA *)&senderAddr, &sz)) < 0) {
 		printFailed();
 		return 0;
 	}
-	printf("We received from PF_PACKET possibly ARP packet, length=%d\n", n);
-
+	
 	// Extract encapsulated ARP packet
-	struct myarphdr arph;
+	ArpHdr arph;
 	memcpy(&arph, buf + ETH_HDRLEN, ARP_HDRLEN);
 	if (ntohs(arph.ar_id) != ARP_ID) {
 		printf("Id of ARP is not ours: %d\n", ntohs(arph.ar_id));
 		return 0;
 	}
-
-	in_addr_t destIp;
+	
+	in_addr_t destIp, srcIp;
 	memcpy(&destIp, arph.ar_tip, IP_ADDR_LEN);
+	memcpy(&srcIp, arph.ar_sip, IP_ADDR_LEN);
+	
+	printEthPacketWithArp(buf);
+
 	CacheEntry *lookup = findHwByIP(destIp, headCache);
 	
 	// REPLY
-	if (ntohs(arph.ar_op) == 0) { 
+	if (ntohs(arph.ar_op) == ARP_REP) { 
 		if (lookup == NULL) {
 			return 0;
 		}
@@ -420,14 +394,74 @@ int handleIncomingArpMsg(int pfSocket, in_addr_t myIpAddr, void* buf) {
    		lookup->unix_fd = -1;
 	} 
 	// REQUEST
-	else if (ntohs(arph.ar_op) == 1) {		
-		if (lookup != NULL) {
+	else if (ntohs(arph.ar_op) == ARP_REQ) {				
+		if (destIp == myIpAddr) {
+			debug("insert&send");
+			//insertCacheEntry(destIp, arph.ar_tha, senderAddr.sll_ifindex, arph.ar_hrd, -1, &headCache, &tailCache);		
+			// For the destination node there will always be a lookup in the cache.
 			updateCacheEntry(lookup, senderAddr.sll_ifindex, arph.ar_hrd, -1);
+
+			sendArp(pfSocket, myIpAddr, srcIp, ARP_REP);
 		}
-		else if (destIp == myIpAddr) {
-			insertCacheEntry(destIp, arph.ar_tha, senderAddr.sll_ifindex, arph.ar_hrd, -1, &headCache, &tailCache);
+		else {
+			if (lookup != NULL) {
+				debug("update");
+				updateCacheEntry(lookup, senderAddr.sll_ifindex, arph.ar_hrd, -1);
+			}
 		}
 	}
 
 	return 1;
+}
+
+void printEthPacketWithArp(void* buf) {
+	printf("*** Ethernet packet contents ***\n");
+	unsigned char *ptr = buf;
+	printf("Destination MAC: ");
+	printHardware(ptr); // dest
+	ptr += IF_HADDR;
+	printf("Source MAC: ");
+	printHardware(ptr);
+	ptr += IF_HADDR;
+	struct ethhdr *eh = (struct ethhdr *)buf;
+	printf("Frame type: %d\n", (int)ntohs(eh->h_proto));
+
+	printf("*** ARP packet contents ***\n");
+	ptr = buf + ETH_HDRLEN;
+	ArpHdr *ah = (ArpHdr *)ptr;
+	printf("Id:%d, HW type:%d, Protocol:%d, HW size:%d, OP:%d", (int)ntohs(ah->ar_id), (int)ntohs(ah->ar_hrd), 
+		(int)ntohs(ah->ar_pro), (int)ntohs(ah->ar_hln), (int)ntohs(ah->ar_op));
+	
+	printf("Sender HW address:");
+	printHardware(ptr + IF_HADDR);
+	
+	in_addr_t *pIpAddr = (in_addr_t *)ah->ar_sip;
+	printf("Sender IP address: %s\n", printIPHuman(ntohs(*pIpAddr)));
+	
+	printf("Target HW address:");
+	printHardware(ptr + 2*IF_HADDR + IP_ADDR_LEN);
+
+	pIpAddr = (in_addr_t *)ah->ar_tip;
+	printf("Target IP address: %s\n", printIPHuman(ntohs(*pIpAddr)));
+}
+
+void makeMacBroadcast(unsigned char addr[IF_HADDR]) {
+	int i = 0;
+	for(i = 0;i < IF_HADDR;++i) {
+		addr[i] = 0xff;
+	}
+}
+
+
+void fillMyMac(int pfSocket, unsigned char macAddr[IF_HADDR]) {
+	struct ifreq ifr;	
+	// Use ioctl() to look up interface name and get its MAC address.
+	memset (&ifr, 0, sizeof (ifr));	
+	snprintf (ifr.ifr_name, sizeof (ifr.ifr_name), "%s", "eth0\0");
+	if (ioctl (pfSocket, SIOCGIFHWADDR, &ifr) < 0) {
+		perror ("ioctl() failed to get source MAC address ");
+		return;
+	}
+	// Copy source MAC address.
+	memcpy (macAddr, ifr.ifr_hwaddr.sa_data, IF_HADDR);
 }

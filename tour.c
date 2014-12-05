@@ -620,8 +620,6 @@ void dispatch(int rtSocket, int pgSocket, int pfpSocket) {
 			bzero(&senderAddr, addrLen);
 		 	addrLen = sizeof(senderAddr);
 			int length = recvfrom(pgSocket, buf, MAXLINE, 0, (SA* )&senderAddr, &addrLen);
-			char* ipr = inet_ntoa(senderAddr.sin_addr);
-			printf("Received something from PG %s\n", ipr);
 			if (length == -1) { 
 				printFailed();								
 			}
@@ -687,6 +685,9 @@ void processPgResponse(void *ptr, ssize_t len, SockAddrIn senderAddr, int addrle
 	if ( (icmplen = len - hlen1) < 8)
 		return;				/* malformed packet */
 	if (icmp->icmp_type != 0) {
+		return;
+	}
+	if (ntohs(icmp->icmp_id) != RT_ICMPID) {
 		return;
 	}
 	

@@ -126,8 +126,8 @@ void sendPing(struct sockaddr *destIp, socklen_t sockaddrlen)
 
 	// Fill out sockaddr_ll.
 	device.sll_family = AF_PACKET;
-	memcpy (device.sll_addr, src_mac, 6 * sizeof (uint8_t));
 	device.sll_halen = htons (6);
+	memcpy (device.sll_addr, src_mac, 6);
 	
 	// IPv4 header
 	datalen = ECHO_R_ICMP_DATALEN;

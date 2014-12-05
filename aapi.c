@@ -17,8 +17,6 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
         perror("socket");
         return 0;
     }
-
-
     remote.sun_family = AF_UNIX;
     strcpy(remote.sun_path, UNIX_FILE);
     len = strlen(remote.sun_path) + sizeof(remote.sun_family);
@@ -29,19 +27,17 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
         return 0;
     }
 
-
     //Construct Buffer for messages to unix socket file 
 	int bufSize = sizeof(struct arpdto);
 	uint8_t *buffer = (uint8_t*)malloc(bufSize);
 	struct sockaddr_in * s_in = (struct sockaddr_in *) IPaddr;
 	struct arpdto dto;
 	bzero(&dto, bufSize);
-	dto.ipaddr = htonl(s_in->sin_addr.s_addr);
-	dto.ifindex = HWaddr->sll_ifindex;
-	dto.hatype = HWaddr->sll_hatype;
-	dto.halen = HWaddr->sll_halen;
-	memcpy(buffer, &dto, bufSize);
-	
+	dto.ipaddr = s_in->sin_addr.s_addr;
+	//dto.ifindex = htonl(2);
+	//dto.hatype = htons(HWaddr->sll_hatype);
+	//dto.halen = HWaddr->sll_halen;
+	memcpy(buffer, &dto, bufSize);	
 
 	printf("AREQ: Sent message to ARP to get Hardware address for IP : %s\n", inet_ntoa(s_in->sin_addr));
 	//Send to Unix socke file

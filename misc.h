@@ -12,7 +12,7 @@ int getmax(int a, int b);
 
 #define MY_IP_ID 241
 #define ETH_PROTO 0x2457
-#define ARP_PROTO 0x923
+#define ARP_PROTO 0xCCE9
 
 #define RT_ICMPID 1257
 #define PING_ICMPID 1258
