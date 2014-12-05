@@ -178,14 +178,16 @@ void infiniteSelect(int unix_sd, int pf_sd){
             ina.s_addr = ntohl(msgr->ipaddr);
             debug("%u", msgr->ipaddr);
             printf("Message IP: %s\n IFIndex: %d, HW Type: %u , HW Len: %u\n", inet_ntoa(ina), ntohl(msgr->ifindex), ntohs(msgr->hatype), msgr->halen);
-           	printCacheEntries(headCache);
+           	
            	CacheEntry * lookup  = findHwByIP(htonl(msgr->ipaddr), headCache);
            	if(lookup == NULL){
-           		//TODO: Broadcast on all the interfaces and wait for response to resolve hardware
+           		//TODO: Broadcast on all the interfaces
            		debug("Cache entry not found.");
            		
            		//TODO: Add partial entry to cache
-
+           		insertCacheEntry(msgr->ipaddr, NULL, msgr->ifindex, msgr->hatype, s2, &headCache, &tailCache);
+           		debug("Inserted partial cache entry.");
+           		printCacheEntries(headCache);
            		//TODO: Setup up select on sd to see if it becomes readable
            		//		if it does then we know that the other end closed the socket
            		FD_ZERO(&rset2);
@@ -198,7 +200,8 @@ void infiniteSelect(int unix_sd, int pf_sd){
            			//Became readable. Means we got a FIN from the other end. 
            			//TODO:	Remove Partial entry from Cache
            			debug("AREQ timed out. Removing partial entry and returning");
-           			//deletePartialCacheEntry(msgr->ipaddr), &headCache, &tailCache);
+           			deletePartialCacheEntry(msgr->ipaddr, &headCache, &tailCache);
+           			printCacheEntries(headCache);
            		}
            	}
            	else{

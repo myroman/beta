@@ -39,8 +39,8 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
 	struct arpdto dto;
 	bzero(&dto, bufSize);
 	dto.ipaddr = htonl(s_in->sin_addr.s_addr);
-	dto.ifindex = htonl(HWaddr->sll_ifindex);
-	dto.hatype = htons(HWaddr->sll_hatype);
+	dto.ifindex = HWaddr->sll_ifindex;
+	dto.hatype = HWaddr->sll_hatype;
 	dto.halen = HWaddr->sll_halen;
 	memcpy(buffer, &dto, bufSize);
 	
@@ -99,7 +99,7 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
 
 int main(){
 	struct sockaddr_in s;
-	s.sin_addr.s_addr = inet_addr("10.255.5.149");
+	s.sin_addr.s_addr = inet_addr("127.0.0.1");//"10.255.5.149");
 	struct hwaddr h;
 	h.sll_ifindex = 3;
 	h.sll_hatype = 5;
