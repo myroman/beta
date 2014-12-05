@@ -431,3 +431,34 @@ int handleIncomingArpMsg(int pfSocket, in_addr_t myIpAddr, void* buf) {
 
 	return 1;
 }
+
+void printEthPacketWithArp(void* buf) {
+	printf("*** Ethernet packet contents ***\n");
+	unsigned char *ptr = buf;
+	printf("Destination MAC: ");
+	printHardware(ptr); // dest
+	ptr += IF_HADDR;
+	printf("Source MAC: ");
+	printHardware(ptr);
+	ptr += IF_HADDR;
+	struct ethhdr *eh = (struct ethhdr *)buf;
+	printf("Frame type: %d\n", (int)ntohs(eh->h_proto));
+
+	printf("*** ARP packet contents ***\n");
+	ptr = buf + ETH_HDRLEN;
+	struct myarphdr *ah = (struct myarphdr *)ptr;
+	printf("Id:%d, HW type:%d, Protocol:%d, HW size:%d, OP:%d", (int)ntohs(ah->ar_id), (int)ntohs(ah->ar_hrd), 
+		(int)ntohs(ah->ar_pro), (int)ntohs(ah->ar_hln), (int)ntohs(ah->ar_op));
+	
+	printf("Sender HW address:");
+	printHardware(ptr + IF_HADDR);
+	
+	in_addr_t *pIpAddr = (in_addr_t *)ah->ar_sip;
+	printf("Sender IP address: %s\n", printIPHuman(ntohs(*pIpAddr)));
+	
+	printf("Target HW address:");
+	printHardware(ptr + 2*IF_HADDR + IP_ADDR_LEN);
+
+	pIpAddr = (in_addr_t *)ah->ar_tip;
+	printf("Target IP address: %s\n", printIPHuman(ntohs(*pIpAddr)));
+}
