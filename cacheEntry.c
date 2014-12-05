@@ -148,3 +148,12 @@ void updateCacheEntry(CacheEntry * entry, int ifind, unsigned short hatype, int 
 	entry->sll_hatype = hatype;
 	entry->unix_fd = ufd;
 }
+
+
+void updatePartialCacheEntry(CacheEntry *entry, char *hw, int ifind, unsigned short hatype){
+	if(hw != NULL){
+		memcpy((entry->if_haddr), hw, IF_HADDR);
+	}
+	entry->sll_ifindex = ifind;
+	entry->sll_hatype = hatype;
+}
