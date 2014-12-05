@@ -4,7 +4,7 @@
 #include "unp.h"
 #include "hw_addrs.h"
 #include "misc.h"
-
+#include "checksum.h"
 #include <unistd.h>           // close()
 #include <string.h>           // strcpy, memset(), and memcpy()
 
@@ -27,35 +27,31 @@
 // Define some constants.
 
 #define ICMP_HDRLEN 6 //was 8         // ICMP header length for echo request, excludes data
-
-// Function prototypes
-uint16_t checksum (uint16_t *, int);
-char *allocate_strmem (int);
-uint8_t *allocate_ustrmem (int);
-int *allocate_intmem (int);
-
+#define RT_PROTO 89
+void tv_sub(struct timeval *out, struct timeval *in);
 void dispatch(int rtSocket, int pgSocket, int pfpSocket);
 int createRtSocket();
 int createPgSocket();
 int createPfPacketSocket();
-
+int sendRtMsg(int sd);
 void processRtResponse(char *ptr, ssize_t len, SockAddrIn senderAddr, int pfpSocket);
-void processPgResponse(char *buf, ssize_t len, SockAddrIn senderAddr);
-void sendPfPacket2();
+void processPgResponse(char *buf, ssize_t len, SockAddrIn senderAddr, int addrlen);
+void sendPing();
+void tv_sub(struct timeval *out, struct timeval *in);
 struct in_addr * ip_list;
 char* myNodeIP;
 char* myNodeName;
 
 int createRtSocket(){
-	const int on = 1;	
+	const int on = 1;
 	int sd;
 	struct ifreq ifr;
 	char* interface = allocate_strmem (40);
 	strcpy (interface, "eth0");
 	// Submit request for a socket descriptor to look up interface.
-	if ((sd = socket (AF_INET, SOCK_RAW, IPPROTO_ICMP)) < 0) {
-	perror ("socket() failed to get socket descriptor for using ioctl() ");
-	exit (EXIT_FAILURE);
+	if ((sd = socket (AF_INET, SOCK_RAW, RT_PROTO)) < 0) {
+		perror ("socket() failed to get socket descriptor for using ioctl() ");
+		exit (EXIT_FAILURE);
 	}
 
 	// Use ioctl() to look up interface index which we will use to
@@ -67,11 +63,10 @@ int createRtSocket(){
 		perror ("ioctl() failed to find interface ");
 		return (EXIT_FAILURE);
 	}
-	close (sd);
-	printf ("Index for interface %s is %i\n", interface, ifr.ifr_ifindex);
+	close (sd);	
 
 	// Submit request for a raw socket descriptor.
-	if ((sd = socket (AF_INET, SOCK_RAW, IPPROTO_ICMP)) < 0) {
+	if ((sd = socket (AF_INET, SOCK_RAW, RT_PROTO)) < 0) {
 		perror ("socket() failed ");
 		exit (EXIT_FAILURE);
 	}
@@ -111,8 +106,7 @@ int createPgSocket(){
 		return (EXIT_FAILURE);
 	}
 	close (sd);
-	printf ("Index for interface %s is %i\n", interface, ifr.ifr_ifindex);
-
+	
 	// Submit request for a raw socket descriptor.
 	if ((sd = socket (AF_INET, SOCK_RAW, IPPROTO_ICMP)) < 0) {
 		perror ("socket() failed ");
@@ -137,7 +131,7 @@ int createPfPacketSocket() {
 	return sd;
 }
 
-int sendIpRaw(int sd){
+int sendRtMsg(int sd){
 	
 	int status, datalen, *ip_flags;
 	char *target, *src_ip, *dst_ip;
@@ -190,44 +184,24 @@ int sendIpRaw(int sd){
 	// IPv4 header
 
 	// IPv4 header length (4 bits): Number of 32-bit words in header = 5
-	iphdr.ip_hl = IP4_HDRLEN / sizeof (uint32_t);
-
-	// Internet Protocol version (4 bits): IPv4
-	iphdr.ip_v = 4;
-
-	// Type of service (8 bits)
-	iphdr.ip_tos = 0;
-
-	// Total length of datagram (16 bits): IP header + ICMP header + ICMP data
-	iphdr.ip_len = htons (IP4_HDRLEN + ICMP_HDRLEN + datalen);
-
-	// ID sequence number (16 bits): unused, since single datagram
-	iphdr.ip_id = htons (MY_IP_ID);
+	iphdr.ip_hl = IP4_HDRLEN / sizeof (uint32_t);	
+	iphdr.ip_v = 4;// Internet Protocol version (4 bits): IPv4	
+	iphdr.ip_tos = 0;// Type of service (8 bits)	
+	iphdr.ip_len = htons (IP4_HDRLEN + ICMP_HDRLEN + datalen);// Total length of datagram (16 bits): IP header + UDP header + datalen	
+	iphdr.ip_id = htons (MY_IP_ID);// ID sequence number (16 bits): unused, since single datagram
 
 	// Flags, and Fragmentation offset (3, 13 bits): 0 since single datagram
-
-	// Zero (1 bit)
-	ip_flags[0] = 0;
-
-	// Do not fragment flag (1 bit)
-	ip_flags[1] = 0;
-
-	// More fragments following flag (1 bit)
-	ip_flags[2] = 0;
-
-	// Fragmentation offset (13 bits)
-	ip_flags[3] = 0;
+	ip_flags[0] = 0;  
+	ip_flags[1] = 0;// Do not fragment flag (1 bit)  
+	ip_flags[2] = 0;// More fragments following flag (1 bit)  
+	ip_flags[3] = 0;// Fragmentation offset (13 bits)
 
 	iphdr.ip_off = htons ((ip_flags[0] << 15)
 	                  + (ip_flags[1] << 14)
 	                  + (ip_flags[2] << 13)
-	                  +  ip_flags[3]);
-
-	// Time-to-Live (8 bits): default to maximum value
-	iphdr.ip_ttl = 255;
-
-	// Transport layer protocol (8 bits): 1 for ICMP
-	iphdr.ip_p = IPPROTO_ICMP;
+	                  +  ip_flags[3]);	
+	iphdr.ip_ttl = 255;// Time-to-Live (8 bits): default to maximum value	
+	iphdr.ip_p = RT_PROTO;// Transport layer protocol (8 bits): 1 for ICMP
 
 	// Source IPv4 address (32 bits)
 	if ((status = inet_pton (AF_INET, src_ip, &(iphdr.ip_src))) != 1) {
@@ -243,14 +217,15 @@ int sendIpRaw(int sd){
 
 	// IPv4 header checksum (16 bits): set to 0 when calculating checksum
 	iphdr.ip_sum = 0;
-	//iphdr.ip_sum = checksum ((uint16_t *) &iphdr, IP4_HDRLEN);
+	iphdr.ip_sum = checksum ((uint16_t *) &iphdr, IP4_HDRLEN);
 
 	// ICMP header	
-	icmphdr.icmp_type = ICMP_ECHO;// Message Type (8 bits): echo request	
+	icmphdr.icmp_type = 0;// Message Type (8 bits): echo request	
 	icmphdr.icmp_code = 0;// Message Code (8 bits): echo request	
-	icmphdr.icmp_id = htons (ICMPID);// Identifier (16 bits): usually pid of sending process - pick a number	
+	icmphdr.icmp_id = htons (RT_ICMPID);// Identifier (16 bits): usually pid of sending process - pick a number	
 	icmphdr.icmp_seq = htons (0);// Sequence Number (16 bits): starts at 0	
-	icmphdr.icmp_cksum = 0;// ICMP header checksum (16 bits): set to 0 when calculating checksum
+	icmphdr.icmp_cksum = 0;
+	icmphdr.icmp_cksum = icmp4_checksum(icmphdr, data, datalen);
 
 	// Prepare packet.
 	// First part is an IPv4 header.
@@ -260,7 +235,7 @@ int sendIpRaw(int sd){
 	// Finally, add the ICMP data.
 	memcpy (packet + IP4_HDRLEN + ICMP_HDRLEN, data, datalen);
 	// Calculate ICMP header checksum
-	//icmphdr.icmp_cksum = checksum ((uint16_t *) (packet + IP4_HDRLEN), ICMP_HDRLEN + datalen);
+	//icmphdr.icmp_cksum = 0;//checksum ((uint16_t *) (packet + IP4_HDRLEN), ICMP_HDRLEN + datalen);
 	memcpy ((packet + IP4_HDRLEN), &icmphdr, ICMP_HDRLEN);
 
 	// The kernel is going to prepare layer 2 information (ethernet frame header) for us.
@@ -274,8 +249,8 @@ int sendIpRaw(int sd){
 	printf("Gonna send...");
 	// Send packet.
 	if (sendto (sd, packet, IP4_HDRLEN + ICMP_HDRLEN + datalen, 0, (struct sockaddr *) &sin, sizeof (struct sockaddr)) < 0)  {
-	perror ("sendto() failed ");
-	exit (EXIT_FAILURE);
+		perror ("sendto() failed ");
+		exit (EXIT_FAILURE);
 	}
 	printOK();
 	
@@ -360,7 +335,7 @@ int main(int argc, char ** argv){
 	int rtSocket = createRtSocket();
 	int pfpSocket = createPfPacketSocket();
 	if (VMcount > 0) {			
-		sendIpRaw(rtSocket);
+		sendRtMsg(rtSocket);
 		//if we set some input args, let's send PF_PACKET ICMP msg to vm1
 	}
 
@@ -369,93 +344,6 @@ int main(int argc, char ** argv){
 	free(ip_list);
 	free(myNodeName);
 	return 0;
-}
-
-// Checksum function
-uint16_t checksum (uint16_t *addr, int len)
-{
-  int nleft = len;
-  int sum = 0;
-  uint16_t *w = addr;
-  uint16_t answer = 0;
-
-  while (nleft > 1) {
-    sum += *w++;
-    nleft -= sizeof (uint16_t);
-  }
-
-
-  if (nleft == 1) {
-    *(uint8_t *) (&answer) = *(uint8_t *) w;
-    sum += answer;
-  }
-
-  sum = (sum >> 16) + (sum & 0xFFFF);
-  sum += (sum >> 16);
-  answer = ~sum;
-  return (answer);
-}
-
-// Allocate memory for an array of chars.
-char *
-allocate_strmem (int len)
-{
-  void *tmp;
-  if (len <= 0) {
-    fprintf (stderr, "ERROR: Cannot allocate memory because len = %i in allocate_strmem().\n", len);
-    exit (EXIT_FAILURE);
-  }
-
-  tmp = (char *) malloc (len * sizeof (char));
-  if (tmp != NULL) {
-    memset (tmp, 0, len * sizeof (char));
-    return (tmp);
-  } else {
-    fprintf (stderr, "ERROR: Cannot allocate memory for array allocate_strmem().\n");
-    exit (EXIT_FAILURE);
-  }
-}
-
-// Allocate memory for an array of unsigned chars.
-uint8_t *
-allocate_ustrmem (int len)
-{
-  void *tmp;
-
-  if (len <= 0) {
-    fprintf (stderr, "ERROR: Cannot allocate memory because len = %i in allocate_ustrmem().\n", len);
-    exit (EXIT_FAILURE);
-  }
-
-  tmp = (uint8_t *) malloc (len * sizeof (uint8_t));
-  if (tmp != NULL) {
-    memset (tmp, 0, len * sizeof (uint8_t));
-    return (tmp);
-  } else {
-    fprintf (stderr, "ERROR: Cannot allocate memory for array allocate_ustrmem().\n");
-    exit (EXIT_FAILURE);
-  }
-}
-
-// Allocate memory for an array of ints.
-int *
-allocate_intmem (int len)
-{
-  void *tmp;
-
-  if (len <= 0) {
-    fprintf (stderr, "ERROR: Cannot allocate memory because len = %i in allocate_intmem().\n", len);
-    exit (EXIT_FAILURE);
-  }
-
-  tmp = (int *) malloc (len * sizeof (int));
-  if (tmp != NULL) {
-    memset (tmp, 0, len * sizeof (int));
-    return (tmp);
-  } else {
-    fprintf (stderr, "ERROR: Cannot allocate memory for array allocate_intmem().\n");
-    exit (EXIT_FAILURE);
-  }
 }
 
 void dispatch(int rtSocket, int pgSocket, int pfpSocket) {
@@ -493,28 +381,23 @@ void dispatch(int rtSocket, int pgSocket, int pfpSocket) {
 			if (length == -1) { 
 				printFailed();								
 			}
-			char* ipr = inet_ntoa(senderAddr.sin_addr);
-			printf("Received RT from %s\n", ipr);
-			//free(ipr);
-			debug("Got rt packet, length = %d", length);									
+			char* ipr = inet_ntoa(senderAddr.sin_addr);			
+			debug("Got rt packet from %s, length = %d", ipr, length);									
 			processRtResponse(buf, length, senderAddr, pfpSocket);			
 		}
 		// if received a ping
 		if (FD_ISSET(pgSocket, &set)){
-			debug("Received something on the pg socket...");
 			bzero(buf, MAXLINE);
 			bzero(&senderAddr, addrLen);
 		 	addrLen = sizeof(senderAddr);
 			int length = recvfrom(pgSocket, buf, MAXLINE, 0, (SA* )&senderAddr, &addrLen);
 			char* ipr = inet_ntoa(senderAddr.sin_addr);
-			printf("Received from %s\n", ipr);
-			//free(ipr);
+			printf("Received something from PG %s\n", ipr);
 			if (length == -1) { 
 				printFailed();								
 			}
 
-			debug("Got ping packet, length = %d", length);									
-			processPgResponse(buf, length, senderAddr);
+			processPgResponse(buf, length, senderAddr, addrLen);
 		}
 		
 	}
@@ -527,30 +410,58 @@ void processRtResponse(char *ptr, ssize_t len, SockAddrIn senderAddr, int pfpSoc
 	struct timeval	*tvsend;
 	char buff[MAXLINE];	
 	struct ip *ip = (struct ip *) ptr;		/* start of IP header */	
-	
-	if (ip->ip_p != IPPROTO_ICMP)
-		return;				/* not ICMP */
+	if (ip->ip_p != RT_PROTO)
+		return;				/* not RT */
 
 	int hlen1 = ip->ip_hl << 2;		/* length of IP header */	
 	struct icmp	*icmp = (struct icmp *) (ptr + hlen1);	/* start of ICMP header */
 	if ( (icmplen = len - hlen1) < 8)
 		return;				/* malformed packet */
-	printf("hlenl:%d, len=%d\n", hlen1, (int)len);
+	if (ntohs(icmp->icmp_id) != RT_ICMPID) {
+		return;
+	}
+	
 	time_t ticks = time(NULL);
     snprintf(buff, sizeof(buff), "%.24s", ctime(&ticks));
 	struct hostent *hptr;
 	//printf("%s received source routing packet from %s.icmp type=%d, id=%d\n", buff, inet_ntoa(senderAddr.sin_addr), ntohs(icmp->icmp_type), ntohs(icmp->icmp_id));
 	if((hptr = gethostbyaddr(&(senderAddr.sin_addr), sizeof (senderAddr.sin_addr), AF_INET)) == NULL)
         err_quit ( "gethostbyaddress error");            
-	printf("%s received source routing packet from %s. icmp type=%d, id=%d,imcplen=%d\n", buff, hptr->h_name, icmp->icmp_type, ntohs(icmp->icmp_id), icmplen);
-	
-	if (ntohs(icmp->icmp_id) != ICMPID) {
-		return;
-	}	
-
-	//sendPfPacket(pfpSocket);
-	sendPfPacket2();
+	printf("%s received source routing packet from %s. icmp type=%d, id=%d,imcplen=%d\n", buff, hptr->h_name, icmp->icmp_type, ntohs(icmp->icmp_id), icmplen);	
+	sendPing();
 }
-void processPgResponse(char *buf, ssize_t len, SockAddrIn senderAddr) {
+void processPgResponse(char *ptr, ssize_t len, SockAddrIn senderAddr, int addrlen) {
+	int icmplen;
+	struct ip *ip = (struct ip *) ptr;		/* start of IP header */	
+	
+	if (ip->ip_p != IPPROTO_ICMP)
+		return;				/* not ICMP */
+	int hlen1 = ip->ip_hl << 2;		/* length of IP header */	
+	struct icmp	*icmp = (struct icmp *) (ptr + hlen1);	/* start of ICMP header */
+	if ( (icmplen = len - hlen1) < 8)
+		return;				/* malformed packet */
+	if (icmp->icmp_type != 0) {
+		return;
+	}
+	
+	struct timeval	*tvsend;
+	struct timeval tvrecv;
+	Gettimeofday(&tvrecv, NULL);
+	
+	tvsend = (struct timeval *) icmp->icmp_data;
+	tv_sub(&tvrecv, tvsend);
+	double rtt = tvrecv.tv_sec * 1000.0 + tvrecv.tv_usec / 1000.0;
 
+	printf("%d bytes from %s: seq=%u, ttl=%d, rtt=%.3f ms\n",
+			icmplen, Sock_ntop_host((SA *)&senderAddr, addrlen),
+			icmp->icmp_seq, ip->ip_ttl, rtt);
+}
+
+void tv_sub(struct timeval *out, struct timeval *in)
+{
+	if ( (out->tv_usec -= in->tv_usec) < 0) {	/* out -= in */
+		--out->tv_sec;
+		out->tv_usec += 1000000;
+	}
+	out->tv_sec -= in->tv_sec;
 }
