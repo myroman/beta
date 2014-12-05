@@ -428,7 +428,8 @@ void processRtResponse(char *ptr, ssize_t len, SockAddrIn senderAddr, int pfpSoc
 	if((hptr = gethostbyaddr(&(senderAddr.sin_addr), sizeof (senderAddr.sin_addr), AF_INET)) == NULL)
         err_quit ( "gethostbyaddress error");            
 	printf("%s received source routing packet from %s. icmp type=%d, id=%d,imcplen=%d\n", buff, hptr->h_name, icmp->icmp_type, ntohs(icmp->icmp_id), icmplen);	
-	sendPing();
+	
+	sendPing((struct sockaddr*)&senderAddr, sizeof(senderAddr));
 }
 void processPgResponse(char *ptr, ssize_t len, SockAddrIn senderAddr, int addrlen) {
 	int icmplen;

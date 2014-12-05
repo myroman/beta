@@ -26,12 +26,10 @@
 
 #include <errno.h>            // errno, perror()
 
-
-#define ETH_HDRLEN 14  // Ethernet header length
 #define IP4_HDRLEN 20  // IPv4 header length
 #define ICMP_HDRLEN 8  // ICMP header length for echo request, excludes data
 
-void sendPing()
+void sendPing(struct sockaddr *destIp, socklen_t sockaddrlen)
 {
 	int i, status, datalen, frame_length, sd, bytes, *ip_flags;
 	char *interface, *target, *src_ip, *dst_ip;
@@ -83,13 +81,26 @@ void sendPing()
 		exit (EXIT_FAILURE);
 	}
 
-	dst_mac[0] = 0x00;
+	struct hwaddr destHwAddr;
+	int res2 = areq(destIp, sockaddrlen, &destHwAddr);
+	if (res2 == -1) {
+		printf("ARP haven't responded. Return\n");
+		return;
+	}
+	if (res2 == 0) {
+		return; // already printed
+	}
+	
+	memcpy(dst_mac, &destHwAddr.sll_addr, 6);
+	printf("ARP gave us MAC:\n");
+	printHardware(dst_mac);
+	/*dst_mac[0] = 0x00;
 	dst_mac[1] = 0x0c;
 	dst_mac[2] = 0x29;
 	dst_mac[3] = 0x49;
 	dst_mac[4] = 0x3f;
 	dst_mac[5] = 0x5b;
-
+	*/
 	strcpy (src_ip, "130.245.156.22");
 	strcpy (target, "130.245.156.21");
 
