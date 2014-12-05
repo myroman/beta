@@ -13,11 +13,13 @@ int getmax(int a, int b);
 #define MY_IP_ID 241
 #define ETH_PROTO 0x2457
 
-#define ICMPID 1258
+#define RT_ICMPID 1257
+#define PING_ICMPID 1258
 #define	IF_HADDR	 6	/* same as IFHWADDRLEN in <net/if.h> */
 #define ROMAN_IP_TEST "10.0.2.15\0"
 #define IP4_HDRLEN 20         // IPv4 header length
 
+#define ECHO_R_ICMP_DATALEN 56
 
 #define OUR_PROTO 1925
 #define UNIX_FILE "ARPUnixFile"

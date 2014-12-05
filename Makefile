@@ -15,8 +15,8 @@ misc.o: misc.c
 #get_ifi_info_plus.o: get_ifi_info_plus.c
 #	${CC} ${CFLAGS} -c get_ifi_info_plus.c ${UNP}
 
-tour: tour.o get_hw_addrs.o misc.o ping.o
-	${CC} ${FLAGS} -o $@ tour.o get_hw_addrs.o misc.o ping.o ${LIBS}
+tour: tour.o get_hw_addrs.o misc.o ping.o checksum.o
+	${CC} ${FLAGS} -o $@ tour.o get_hw_addrs.o misc.o ping.o checksum.o ${LIBS}
 
 arp: arp.o get_hw_addrs.o cacheEntry.o misc.o
 	${CC} ${FLAGS} -o $@ arp.o get_hw_addrs.o cacheEntry.o misc.o ${LIBS}
@@ -26,6 +26,8 @@ misc.o: misc.c
 	${CC} ${FLAGS} -c misc.c ${UNP}
 ping.o: ping.c
 	${CC} ${FLAGS} -c ping.c ${UNP}	
+checksum.o: checksum.c
+	${CC} ${FLAGS} -c checksum.c ${UNP}		
 
 cacheEntry.o: cacheEntry.c misc.o
 	${CC} ${FLAGS} -c cacheEntry.c misc.o ${UNP}
