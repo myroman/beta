@@ -21,7 +21,28 @@ int getmax(int a, int b);
 
 #define ECHO_R_ICMP_DATALEN 56
 
+#define OUR_PROTO 1925
+#define UNIX_FILE "ARPUnixFile"
+
+
+//hwaddr structure
+struct hwaddr {
+	int             sll_ifindex;	 /* Interface number */
+	unsigned short  sll_hatype;	 /* Hardware type */
+	unsigned char   sll_halen;		 /* Length of address */
+	unsigned char   sll_addr[8];	 /* Physical layer address */
+};
+
+struct arpdto {
+	in_addr_t ipaddr;
+	int ifindex;
+	unsigned short hatype;
+	unsigned char  halen;
+};
+
+
 void printHardware(char * hw);
+
 typedef struct sockaddr_un SockAddrUn;
 typedef struct sockaddr_ll SockAddrLl;
 typedef struct sockaddr_in SockAddrIn;
