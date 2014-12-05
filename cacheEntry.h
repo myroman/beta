@@ -21,5 +21,6 @@ CacheEntry * findCacheEntry(in_addr_t ip, char* hw, CacheEntry *headCache);
 CacheEntry * findHwByIP(in_addr_t, CacheEntry * headCache);
 void printCacheEntries(CacheEntry *headCache);
 void updateCacheEntry(CacheEntry * entry, int ifind, unsigned short hatype, int ufd);
+void updatePartialCacheEntry(CacheEntry *entry, char *hw, int ifind, unsigned short hatype);
 
 #endif
