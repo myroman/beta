@@ -20,12 +20,12 @@ struct Set{
 
 typedef struct myarphdr ArpHdr;
 
-void sendArp(int pfSocket, in_addr_t srcIp, in_addr_t destIp, int op);
-void sendArpPacket(int pfSocket, ArpHdr ahdr);
+void sendArp(int pfSocket, in_addr_t srcIp, in_addr_t destIp, int op, unsigned char dst_mac[IF_HADDR]);
+void sendArpPacket(int pfSocket, ArpHdr ahdr, unsigned char dst_mac[IF_HADDR]);
 void makeMacBroadcast(unsigned char addr[IF_HADDR]);
 int handleIncomingArpMsg(int pfSocket, void* buf);
 void fillMyMac(int pfSocket, unsigned char macAddr[IF_HADDR]);
-void sendArpPacket(int pfSocket, struct myarphdr ahdr);
+void printEthPacketWithArp(void* buf);
 
 struct myarphdr {
 	uint16_t ar_id; // our unique ID

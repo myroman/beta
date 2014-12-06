@@ -178,6 +178,8 @@ void infiniteSelect(int unix_sd, int pf_sd){
 	FD_ZERO(&rset);
 	int s2 = -1;
 	void* buff = malloc(MAXLINE);	
+	unsigned char dst_mac[IF_HADDR];
+	makeMacBroadcast(dst_mac);           		
 	
 	for( ; ; ){
 		FD_SET(unix_sd, &rset);
@@ -210,7 +212,7 @@ void infiniteSelect(int unix_sd, int pf_sd){
             printf("Message IP: %s \n", inet_ntoa(ina));
            	CacheEntry * lookup  = findHwByIP(msgr->ipaddr, headCache);
            	if(lookup == NULL){
-           		sendArp(pf_sd, myIpAddr, msgr->ipaddr, ARP_REQ);           		
+           		sendArp(pf_sd, myIpAddr, msgr->ipaddr, ARP_REQ, dst_mac);           		
            		
            		debug("Cache entry not found.");
            		
@@ -247,7 +249,7 @@ void infiniteSelect(int unix_sd, int pf_sd){
            	}
             
             //sleep(7);
-            close(s2);                                            
+            //close(s2);                                            
         }        
 	}
 
@@ -291,7 +293,7 @@ int main(){
 	return 0;
 }
 
-void sendArp(int pfSocket, in_addr_t srcIp, in_addr_t destIp, int op) {
+void sendArp(int pfSocket, in_addr_t srcIp, in_addr_t destIp, int op, unsigned char dst_mac[IF_HADDR]) {
 	ArpHdr ahdr;
 	bzero(&ahdr, sizeof(ahdr));
 	ahdr.ar_hrd = htons(1);
@@ -305,22 +307,17 @@ void sendArp(int pfSocket, in_addr_t srcIp, in_addr_t destIp, int op) {
 	memcpy(ahdr.ar_sha, src_mac, ETH_ALEN);
 	memcpy(ahdr.ar_sip, &srcIp, IP_ADDR_LEN);
 	memcpy(ahdr.ar_tip, &destIp, IP_ADDR_LEN);
+	if (op == ARP_REP) {
+		memcpy(ahdr.ar_tha, dst_mac, ETH_ALEN);
+	}
 	
-	sendArpPacket(pfSocket, ahdr);
+	sendArpPacket(pfSocket, ahdr, dst_mac);
 }
 
-
-void sendArpPacket(int pfSocket, ArpHdr ahdr) {
+void sendArpPacket(int pfSocket, ArpHdr ahdr, unsigned char dst_mac[IF_HADDR]) {
 	char *interface = "eth0\0";
 	void *ether_frame;
-	unsigned char dst_mac[IF_HADDR];
 
-	makeMacBroadcast(dst_mac);
-	
-	printHardware(ahdr.ar_sha);
-	printf("to\n");
-	printHardware(dst_mac);
-	
 	struct sockaddr_ll device;	
 	memset (&device, 0, sizeof (device));
 	
@@ -336,6 +333,7 @@ void sendArpPacket(int pfSocket, ArpHdr ahdr) {
 	
 	//Building Ethernet frame
 	ether_frame = malloc(ETH_HDRLEN + ARP_HDRLEN);
+	
 	memcpy (ether_frame, dst_mac, IF_HADDR);
 	memcpy ((void*)(ether_frame + IF_HADDR), ahdr.ar_sha, IF_HADDR);
 	struct ethhdr *eh = (struct ethhdr *)ether_frame;/*another pointer to ethernet header*/	 
@@ -378,15 +376,29 @@ int handleIncomingArpMsg(int pfSocket, void* buf) {
 	
 	printEthPacketWithArp(buf);
 
-	CacheEntry *lookup = findHwByIP(destIp, headCache);
+	CacheEntry *lookup = NULL;
 	
 	// REPLY
 	if (ntohs(arph.ar_op) == ARP_REP) { 
+		lookup = findHwByIP(srcIp, headCache);
 		if (lookup == NULL) {
 			return 0;
 		}
-		//TODO: create needed function
-
+		//updatePartialCacheEntry(&lookup, buf + ETH_HDRLEN + 10, senderAddr.sll_ifindex, arph.ar_hrd);
+		void* hwaPtr = (buf + ETH_HDRLEN + 10);
+		if(hwaPtr != NULL){
+			printHardware(hwaPtr);
+			memcpy((lookup->if_haddr), hwaPtr, IF_HADDR);
+			printf("\n");
+			printHardware(lookup->if_haddr);
+		}
+		lookup->sll_ifindex = senderAddr.sll_ifindex;
+		lookup->sll_hatype = arph.ar_hrd;
+		printCacheEntries(headCache);
+		debug("unifd:%d\n", lookup->unix_fd);
+		printHardware(lookup->if_haddr);
+		//printHardware(lookup->if_haddr);
+		printCacheEntries(headCache);
 		if(send(lookup->unix_fd, lookup->if_haddr, IF_HADDR, 0) < 0){
    			perror("Error when responding to unix domain socket\n");
    		}
@@ -394,14 +406,15 @@ int handleIncomingArpMsg(int pfSocket, void* buf) {
    		lookup->unix_fd = -1;
 	} 
 	// REQUEST
-	else if (ntohs(arph.ar_op) == ARP_REQ) {				
+	else if (ntohs(arph.ar_op) == ARP_REQ) {
+		lookup =  findHwByIP(destIp, headCache);				
 		if (destIp == myIpAddr) {
 			debug("insert&send");
 			//insertCacheEntry(destIp, arph.ar_tha, senderAddr.sll_ifindex, arph.ar_hrd, -1, &headCache, &tailCache);		
 			// For the destination node there will always be a lookup in the cache.
-			updateCacheEntry(lookup, senderAddr.sll_ifindex, arph.ar_hrd, -1);
+			updateCacheEntry(lookup, senderAddr.sll_ifindex, arph.ar_hrd, -1);		
 
-			sendArp(pfSocket, myIpAddr, srcIp, ARP_REP);
+			sendArp(pfSocket, myIpAddr, srcIp, ARP_REP, senderAddr.sll_addr);
 		}
 		else {
 			if (lookup != NULL) {
@@ -429,20 +442,20 @@ void printEthPacketWithArp(void* buf) {
 	printf("*** ARP packet contents ***\n");
 	ptr = buf + ETH_HDRLEN;
 	ArpHdr *ah = (ArpHdr *)ptr;
-	printf("Id:%d, HW type:%d, Protocol:%d, HW size:%d, OP:%d", (int)ntohs(ah->ar_id), (int)ntohs(ah->ar_hrd), 
+	printf("Id:%d, HW type:%d, Protocol:%d, HW size:%d, OP:%d\n", (int)ntohs(ah->ar_id), (int)ntohs(ah->ar_hrd), 
 		(int)ntohs(ah->ar_pro), (int)ntohs(ah->ar_hln), (int)ntohs(ah->ar_op));
 	
 	printf("Sender HW address:");
-	printHardware(ptr + IF_HADDR);
+	printHardware(ptr + 10);
 	
 	in_addr_t *pIpAddr = (in_addr_t *)ah->ar_sip;
-	printf("Sender IP address: %s\n", printIPHuman(ntohs(*pIpAddr)));
+	printf("Sender IP address: %s\n", printIPHuman(ntohl(*pIpAddr)));
 	
 	printf("Target HW address:");
-	printHardware(ptr + 2*IF_HADDR + IP_ADDR_LEN);
+	printHardware(ptr + 10 + IF_HADDR + IP_ADDR_LEN);
 
 	pIpAddr = (in_addr_t *)ah->ar_tip;
-	printf("Target IP address: %s\n", printIPHuman(ntohs(*pIpAddr)));
+	printf("Target IP address: %s\n", printIPHuman(ntohl(*pIpAddr)));
 }
 
 void makeMacBroadcast(unsigned char addr[IF_HADDR]) {
