@@ -4,7 +4,7 @@
 
 int main(){
 	debug("Hello World");
-
+	debug("%d",sizeof(struct tourdata));
 	struct tourdata test;
 	
 	test.index = 0;

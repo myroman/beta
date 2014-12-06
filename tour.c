@@ -1,13 +1,14 @@
 #include "debug.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include "unp.h"
+//#include "unp.h"
+#include "unpthread.h"
 #include "hw_addrs.h"
 #include "misc.h"
 #include "checksum.h"
 #include <unistd.h>           // close()
 #include <string.h>           // strcpy, memset(), and memcpy()
-
+#include "ping.h"
 #include <netdb.h>            // struct addrinfo
 #include <sys/types.h>        // needed for socket(), uint8_t, uint16_t, uint32_t
 #include <sys/socket.h>       // needed for socket()
@@ -55,6 +56,7 @@ struct sockaddr *sasend;
 //Hold the nodes we are already pinging 
 int numPinging = 0;
 in_addr_t pinging_ip [10];
+pthread_t ping_thread_ids[10]; 
 
 int createRtSocket(){
 	const int on = 1;
@@ -598,8 +600,22 @@ void processRtResponse(void *ptr, ssize_t len, SockAddrIn senderAddr, int rtsd)
 		}
 	}
 	pinging_ip[numPinging] = senderAddr.sin_addr.s_addr;
-	numPinging++;
-	sendPing(ip_list[0], (struct sockaddr *)&senderAddr, sizeof(senderAddr));
+	
+
+	//TODO: pthread create this bad boy
+	pthread_t tid;
+	struct paramsToPing p;
+    p.srcIp = ip_list[0];
+    p.destAddr= (struct sockaddr *)&senderAddr;
+    p.sockaddrlen = sizeof(senderAddr);
+    //struct paramsToPing * p_ptr = &p;
+    if( (pthread_create(&tid, NULL, &sendPing, (void*) &p)) != 0)
+    	err_quit("Error creating a thread for pinging");
+    
+    ping_thread_ids[numPinging] = tid;
+    numPinging++;
+    //pthread_create(&tid, NULL, &sendPing, &p);
+	//sendPing(ip_list[0], (struct sockaddr *)&senderAddr, sizeof(senderAddr));
 }
 
 void processPgResponse(void *ptr, ssize_t len, SockAddrIn senderAddr, int addrlen) {
