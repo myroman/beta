@@ -30,6 +30,9 @@ int getmax(int a, int b);
 #define UNIX_FILE "ARPUnixFile"
 
 
+#define MULTICAST_PORT  50000
+#define MULTICAST_IP "224.0.0.231"
+
 //hwaddr structure
 struct hwaddr {
 	int             sll_ifindex;	 /* Interface number */
@@ -43,6 +46,13 @@ struct arpdto {
 	int ifindex;
 	unsigned short hatype;
 	unsigned char  halen;
+};
+
+struct tourdata {
+	int index;
+	int nodes_in_tour;
+	in_addr_t mult_ip;
+	in_port_t mult_port;
 };
 
 
