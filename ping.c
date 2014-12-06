@@ -29,8 +29,13 @@
 #define IP4_HDRLEN 20  // IPv4 header length
 #define ICMP_HDRLEN 8  // ICMP header length for echo request, excludes data
 
-void sendPing(struct in_addr srcIp, struct sockaddr *destAddr, socklen_t sockaddrlen)
+//void sendPing(struct in_addr srcIp, struct sockaddr *destAddr, socklen_t sockaddrlen)
+void sendPing(void * args)
 {
+	struct paramsToPing * p = args;
+	struct in_addr srcIp = p->srcIp;
+	struct sockaddr *destAddr = p->destAddr;
+	socklen_t sockaddrlen = p->sockaddrlen;
 	int i, status, datalen, frame_length, sd, bytes, *ip_flags;
 	char *interface;
 	struct ip iphdr;
@@ -129,45 +134,51 @@ void sendPing(struct in_addr srcIp, struct sockaddr *destAddr, socklen_t sockadd
 	send_icmphdr.icmp_code = 0;	// Message Code (8 bits): echo request
 	send_icmphdr.icmp_id = htons (PING_ICMPID);// Identifier (16 bits): usually pid of sending process - pick a number
 	send_icmphdr.icmp_seq = htons (0);		
-	//attach a timestamp
-	Gettimeofday((struct timeval *) &send_icmphdr.icmp_data, NULL);
-	
-	send_icmphdr.icmp_cksum = 0;
-	int icmplen = 8 + datalen;
-	send_icmphdr.icmp_cksum = in_cksum((u_short*)&send_icmphdr, icmplen);
+	int counter = 0;
+	while(1){	
+		//attach a timestamp
+		Gettimeofday((struct timeval *) &send_icmphdr.icmp_data, NULL);
+		
+		send_icmphdr.icmp_cksum = 0;
+		int icmplen = 8 + datalen;
+		send_icmphdr.icmp_cksum = in_cksum((u_short*)&send_icmphdr, icmplen);
 
-	// Fill out ethernet frame header.
-	// Ethernet frame length = ethernet header (MAC + MAC + ethernet type) + ethernet data (IP header + ICMP header + ICMP data)
-	frame_length = 6 + 6 + 2 + IP4_HDRLEN + ICMP_HDRLEN + datalen;
+		// Fill out ethernet frame header.
+		// Ethernet frame length = ethernet header (MAC + MAC + ethernet type) + ethernet data (IP header + ICMP header + ICMP data)
+		frame_length = 6 + 6 + 2 + IP4_HDRLEN + ICMP_HDRLEN + datalen;
 
-	// Destination and Source MAC addresses
-	memcpy (ether_frame, dst_mac, 6 * sizeof (uint8_t));
-	memcpy (ether_frame + 6, src_mac, 6 * sizeof (uint8_t));
+		// Destination and Source MAC addresses
+		memcpy (ether_frame, dst_mac, 6 * sizeof (uint8_t));
+		memcpy (ether_frame + 6, src_mac, 6 * sizeof (uint8_t));
 
-	// Next is ethernet type code (ETH_P_IP for IPv4).
-	struct ethhdr *eh = (struct ethhdr *)ether_frame;/*another pointer to ethernet header*/	 
-	eh->h_proto = htons(ETH_P_IP);//htons();
-	// IPv4 header and IMCP
-	memcpy (ether_frame + ETH_HDRLEN, &iphdr, IP4_HDRLEN * sizeof (uint8_t));
-	memcpy (ether_frame + ETH_HDRLEN + IP4_HDRLEN, &send_icmphdr, ICMP_HDRLEN);	
-	memcpy (ether_frame + ETH_HDRLEN + IP4_HDRLEN + ICMP_HDRLEN, &send_icmphdr.icmp_data, datalen * sizeof (uint8_t));
+		// Next is ethernet type code (ETH_P_IP for IPv4).
+		struct ethhdr *eh = (struct ethhdr *)ether_frame;/*another pointer to ethernet header*/	 
+		eh->h_proto = htons(ETH_P_IP);//htons();
+		// IPv4 header and IMCP
+		memcpy (ether_frame + ETH_HDRLEN, &iphdr, IP4_HDRLEN * sizeof (uint8_t));
+		memcpy (ether_frame + ETH_HDRLEN + IP4_HDRLEN, &send_icmphdr, ICMP_HDRLEN);	
+		memcpy (ether_frame + ETH_HDRLEN + IP4_HDRLEN + ICMP_HDRLEN, &send_icmphdr.icmp_data, datalen * sizeof (uint8_t));
 
-	// Submit request for a raw socket descriptor.
-	if ((sd = socket(PF_PACKET, SOCK_RAW, htons (ETH_P_IP))) < 0) {
-		perror ("socket() failed ");
-		exit (EXIT_FAILURE);
-	}
-	char* host = "vm1\0";
-    struct addrinfo* ai = Host_serv(host, NULL, 0, 0);
-	char* h = sock_ntop_host(ai->ai_addr, ai->ai_addrlen);
-	printf("PING %s (%s): %d data bytes\n", ai->ai_canonname ? ai->ai_canonname : h, h, datalen);
+		// Submit request for a raw socket descriptor.
+		if ((sd = socket(PF_PACKET, SOCK_RAW, htons (ETH_P_IP))) < 0) {
+			perror ("socket() failed ");
+			exit (EXIT_FAILURE);
+		}
+		
+		debug("Counter: %d", counter);
+		char* host = "vm1\0";
+	    struct addrinfo* ai = Host_serv(host, NULL, 0, 0);
+		char* h = sock_ntop_host(ai->ai_addr, ai->ai_addrlen);
+		printf("PING %s (%s): %d data bytes\n", ai->ai_canonname ? ai->ai_canonname : h, h, datalen);
 
-	// Send ethernet frame to socket.
-	if ((bytes = sendto (sd, ether_frame, frame_length, 0, (struct sockaddr *) &device, sizeof (device))) <= 0) {
-		perror ("sendto() failed");
-		exit (EXIT_FAILURE);
-	}
-
+		// Send ethernet frame to socket.
+		if ((bytes = sendto (sd, ether_frame, frame_length, 0, (struct sockaddr *) &device, sizeof (device))) <= 0) {
+			perror ("sendto() failed");
+			exit (EXIT_FAILURE);
+		}
+		sleep(1);
+		counter++;
+	}	
 	// Close socket descriptor.
 	close (sd);
 
