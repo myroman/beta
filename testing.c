@@ -2,15 +2,6 @@
 #include "debug.h"
 #include "misc.h"
 
-
-struct tourdata {
-	int index;
-	int nodes_in_tour;
-	in_addr_t mult_ip;
-	in_port_t mult_port;
-};
-
-
 int main(){
 	debug("Hello World");
 
