@@ -86,8 +86,7 @@ void sendPing(struct in_addr srcIp, struct sockaddr *destAddr, socklen_t sockadd
 		return; // already printed
 	}
 	
-	memcpy(dst_mac, &destHwAddr.sll_addr, 6);
-	printf("ARP gave us MAC:\n");
+	memcpy(dst_mac, &destHwAddr.sll_addr, 6);	
 	printHardware(dst_mac);
 
 	// Fill out sockaddr_ll.

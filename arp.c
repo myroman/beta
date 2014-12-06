@@ -67,27 +67,7 @@ void printAddressPair(Set *pair){
 
 	toPrint.s_addr = pair->ip;
 	printf("*** Address Pair Found ***\n");
-	//Print IP
 	printf("< %s , ", inet_ntoa(toPrint));
-	//Print HW address
-
-	//Code modified from prhwaddrs.c file
-	/*prflag = 0;
-	i = 0;
-	do {
-		if (pair->hw_addr[i] != '\0') {
-			prflag = 1;
-			break;
-		}
-	} while (++i < IF_HADDR);
-
-	if (prflag) {
-		ptr = pair->hw_addr;
-		i = IF_HADDR;
-		do {
-			printf("%.2x%s", *ptr++ & 0xff, (i == 1) ? " " : ":");
-		} while (--i > 0);
-	}*/
 
 	printHardware(pair->hw_addr);
 
@@ -140,7 +120,6 @@ int createPFPacket(){
 		printf("Creating PF_PACKET, SOCK RAW, %d, failed.\n", ARP_PROTO);
 		return -1;
 	}
-	debug("Successfuly created PF_PACKET Socket. Socket Descriptor: %d, Protocol Number: %d", sd, ARP_PROTO);
 	return sd;
 }
 
@@ -164,7 +143,7 @@ int createUnixSocket(){
 		printf("Error when creating Unix Domain socket. Errno: %s\n", strerror(errno));
 		return -1;
 	}
-	debug("Successfully created Unix Socket File. Socket Descriptor: %d\n", s);
+	//debug("Successfully created Unix Socket File. Socket Descriptor: %d\n", s);
 	return s;
 }
 
@@ -198,8 +177,6 @@ void infiniteSelect(int unix_sd, int pf_sd){
         if(FD_ISSET(unix_sd, &rset)) {
         	FD_CLR(unix_sd, &rset);
 
-            debug("Message on unix domain socket.");
-            
             if((s2 = accept(unix_sd, (struct sockaddr*)&remote, &t)) == -1){
             	debug("ACCEPT error");
             	exit(1);
@@ -209,8 +186,7 @@ void infiniteSelect(int unix_sd, int pf_sd){
             struct arpdto * msgr = (struct arpdto *)buff;
             struct in_addr ina;
             ina.s_addr = msgr->ipaddr;
-            printf("Message IP: %s \n", inet_ntoa(ina));
-           	CacheEntry * lookup  = findHwByIP(msgr->ipaddr, headCache);
+            CacheEntry * lookup  = findHwByIP(msgr->ipaddr, headCache);
            	if(lookup == NULL){
            		sendArp(pf_sd, myIpAddr, msgr->ipaddr, ARP_REQ, dst_mac);           		
            		
@@ -218,8 +194,8 @@ void infiniteSelect(int unix_sd, int pf_sd){
            		
            		//TODO: Add partial entry to cache
            		insertCacheEntry(msgr->ipaddr, NULL, msgr->ifindex, msgr->hatype, s2, &headCache, &tailCache);
-           		debug("Inserted partial cache entry.");
-           		printCacheEntries(headCache);
+           		//debug("Inserted partial cache entry.");
+           		//printCacheEntries(headCache);
            		//TODO: Setup up select on sd to see if it becomes readable
            		//		if it does then we know that the other end closed the socket
            		//FD_ZERO(&rset2);
@@ -325,7 +301,6 @@ void sendArpPacket(int pfSocket, ArpHdr ahdr, unsigned char dst_mac[IF_HADDR]) {
 		perror ("if_nametoindex() failed to obtain interface index ");
 		exit (EXIT_FAILURE);
 	}
-	printf("Device ifindex:%d\n", device.sll_ifindex);
 	device.sll_family = htons(AF_PACKET);
 	device.sll_halen = htons (IF_HADDR);
 	device.sll_hatype = htons(ARPHRD_ETHER);	
@@ -341,21 +316,21 @@ void sendArpPacket(int pfSocket, ArpHdr ahdr, unsigned char dst_mac[IF_HADDR]) {
 
 	memcpy (ether_frame + ETH_HDRLEN, &ahdr, ARP_HDRLEN);
 	
+	printf("Sending ARP packet:\n");			
+	printEthPacketWithArp(ether_frame);
+
 	int bytesSent;
-	printf("Gonna send ARP\n");
 	if ((bytesSent = sendto(pfSocket, ether_frame, ETH_HDRLEN + ARP_HDRLEN, 0, (struct sockaddr *) &device, sizeof (device))) <= 0) {
 		perror ("sendto() failed");
 		return;
 	}
 
 	free(ether_frame);
-	printf("Sent %d bytes in ARP request\n", bytesSent);
 }
 
 int handleIncomingArpMsg(int pfSocket, void* buf) {
 	int n;
 	struct sockaddr_ll senderAddr;
-	debug("Received on PF_PACKET");
 	int sz = sizeof(senderAddr);
 	if ((n = recvfrom(pfSocket, buf, MAXLINE, 0, (SA *)&senderAddr, &sz)) < 0) {
 		printFailed();
@@ -370,11 +345,12 @@ int handleIncomingArpMsg(int pfSocket, void* buf) {
 		return 0;
 	}
 	
+	printf("Received ARP packet:\n");	
+	printEthPacketWithArp(buf);
+
 	in_addr_t destIp, srcIp;
 	memcpy(&destIp, arph.ar_tip, IP_ADDR_LEN);
 	memcpy(&srcIp, arph.ar_sip, IP_ADDR_LEN);
-	
-	printEthPacketWithArp(buf);
 
 	CacheEntry *lookup = NULL;
 	
@@ -384,21 +360,15 @@ int handleIncomingArpMsg(int pfSocket, void* buf) {
 		if (lookup == NULL) {
 			return 0;
 		}
-		//updatePartialCacheEntry(&lookup, buf + ETH_HDRLEN + 10, senderAddr.sll_ifindex, arph.ar_hrd);
 		void* hwaPtr = (buf + ETH_HDRLEN + 10);
 		if(hwaPtr != NULL){
-			printHardware(hwaPtr);
 			memcpy((lookup->if_haddr), hwaPtr, IF_HADDR);
-			printf("\n");
-			printHardware(lookup->if_haddr);
 		}
 		lookup->sll_ifindex = senderAddr.sll_ifindex;
 		lookup->sll_hatype = arph.ar_hrd;
+		
 		printCacheEntries(headCache);
-		debug("unifd:%d\n", lookup->unix_fd);
-		printHardware(lookup->if_haddr);
-		//printHardware(lookup->if_haddr);
-		printCacheEntries(headCache);
+		
 		if(send(lookup->unix_fd, lookup->if_haddr, IF_HADDR, 0) < 0){
    			perror("Error when responding to unix domain socket\n");
    		}
@@ -409,16 +379,12 @@ int handleIncomingArpMsg(int pfSocket, void* buf) {
 	else if (ntohs(arph.ar_op) == ARP_REQ) {
 		lookup =  findHwByIP(destIp, headCache);				
 		if (destIp == myIpAddr) {
-			debug("insert&send");
-			//insertCacheEntry(destIp, arph.ar_tha, senderAddr.sll_ifindex, arph.ar_hrd, -1, &headCache, &tailCache);		
 			// For the destination node there will always be a lookup in the cache.
-			updateCacheEntry(lookup, senderAddr.sll_ifindex, arph.ar_hrd, -1);		
-
+			updateCacheEntry(lookup, senderAddr.sll_ifindex, arph.ar_hrd, -1);
 			sendArp(pfSocket, myIpAddr, srcIp, ARP_REP, senderAddr.sll_addr);
 		}
 		else {
 			if (lookup != NULL) {
-				debug("update");
 				updateCacheEntry(lookup, senderAddr.sll_ifindex, arph.ar_hrd, -1);
 			}
 		}

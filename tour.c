@@ -183,7 +183,7 @@ int sendRtMsg(int sd){
 	datalen = sizeof(struct tourdata) + (VMcount * 4);
 	
 	struct tourdata td;
-	td.index = htonl(1);
+	td.index = htonl(0);
 	td.nodes_in_tour = htonl(VMcount);
 	td.mult_ip = inet_addr(MULTICAST_IP);
 	td.mult_port = htons(MULTICAST_PORT);
@@ -254,7 +254,7 @@ int sendRtMsg(int sd){
 	memcpy (packet + IP4_HDRLEN + ICMP_HDRLEN, data, datalen);
 	// Calculate ICMP header checksum
 	//icmphdr.icmp_cksum = 0;//checksum ((uint16_t *) (packet + IP4_HDRLEN), ICMP_HDRLEN + datalen);
-	memcpy ((packet + IP4_HDRLEN), &icmphdr, ICMP_HDRLEN);
+	//memcpy ((packet + IP4_HDRLEN), &icmphdr, ICMP_HDRLEN);
 
 	// The kernel is going to prepare layer 2 information (ethernet frame header) for us.
 	// For that, we need to specify a destination for the kernel in order for it
@@ -283,90 +283,35 @@ int sendRtMsg(int sd){
 
 int sendRtMsgIntermediate(int sd, void * buf, ssize_t len){
 	
-	int status, datalen, *ip_flags;
-	char *target, *src_ip, *dst_ip;
+	int status, *ip_flags;
 	struct ip iphdr;
 	uint8_t *data, *packet;
 	struct icmp icmphdr;
-	struct addrinfo hints, *res;
 	struct sockaddr_in *ipv4, sin;	
 	void *tmp;
 
 	// Allocate memory for various arrays.
 	data = allocate_ustrmem (IP_MAXPACKET);
 	packet = allocate_ustrmem (IP_MAXPACKET);
-	target = allocate_strmem (40);
-	src_ip = allocate_strmem (INET_ADDRSTRLEN);
-	dst_ip = allocate_strmem (INET_ADDRSTRLEN);
 	ip_flags = allocate_intmem (4);
 	//Unpack the tourdata 
 	struct tourdata * unpack = (struct tourdata *)buf;
-	printf("Index:%d, nodes in tour:%d\n", ntohl(unpack->index), ntohl(unpack->nodes_in_tour));
-	if(unpack->index == unpack->nodes_in_tour){
+	//since we work and change index
+	unpack->index = ntohl(unpack->index);
+	printf("Index:%d, nodes in tour:%d\n", unpack->index, ntohl(unpack->nodes_in_tour));
+	if((unpack->index + 1) == ntohl(unpack->nodes_in_tour)){
 		//Tour has ended. Send multicast here to everyone and return actually 
 		//you dont send anyting from here
-		debug("Tour has ended. Send Multicast message for everyone to report to me.");
+		printf("Tour has ended. Send Multicast message for everyone to report to me.");
 		
 		free (data);
 		free (packet);
-		free (target);
-		free (src_ip);
-		free (dst_ip);
 		free (ip_flags);
 		return 0;		
-	}
-	void * ptr = buf;
-	ptr = ptr + sizeof(struct tourdata);
-	ptr = ptr + (4 * unpack->index);
-	in_addr_t * s_ip =  (in_addr_t *)ptr;
-
-	unpack->index++;
-	ptr = ptr + 4; //advance the pointer to the next in_addr_t
-	in_addr_t * t_ip  = (in_addr_t *)ptr;
-
-	struct in_addr i_a;
-
-	// Interface to send packet through.
-	// TODO: 	Remove hardcoded value make source ip equal to ip_list[0]
-	//		 	Make targe equal to ip_list[index + 1];
-	i_a.s_addr = *s_ip;
-	strcpy (src_ip, inet_ntoa(i_a));
-	i_a.s_addr = *t_ip;
-	strcpy (target, inet_ntoa(i_a));
-
-	// Fill out hints for getaddrinfo().
-	memset (&hints, 0, sizeof (struct addrinfo));
-	hints.ai_family = AF_INET;
-	hints.ai_socktype = SOCK_STREAM;
-	hints.ai_flags = hints.ai_flags | AI_CANONNAME;
-
-	// Resolve target using getaddrinfo().
-	if ((status = getaddrinfo (target, NULL, &hints, &res)) != 0) {
-		fprintf (stderr, "getaddrinfo() failed: %s\n", gai_strerror (status));
-		exit (EXIT_FAILURE);
-	}
-	ipv4 = (struct sockaddr_in *) res->ai_addr;
-	tmp = &(ipv4->sin_addr);
-	if (inet_ntop (AF_INET, tmp, dst_ip, INET_ADDRSTRLEN) == NULL) {
-		status = errno;
-		fprintf (stderr, "inet_ntop() failed.\nError message: %s", strerror (status));
-		exit (EXIT_FAILURE);
-	}
-	freeaddrinfo (res);	
-
-	//TODO: we want to modify the contents of buf here only not recreate the buffer
-	//		Get rid of the following code 
-	datalen =len;
+	}			
+	int itemsArrSizeBytes = ntohl(unpack->nodes_in_tour) * sizeof(struct in_addr);
+	int datalen = sizeof(struct tourdata) + itemsArrSizeBytes;
 	
-	memcpy(data, unpack, sizeof(struct tourdata));
-
-	int rem_size = len - sizeof(struct tourdata);
-	void * ptr2 = buf;
-	void * ptr3 = data;
-	ptr2 = ptr2 + sizeof(struct tourdata);//advance it to the first VM
-	ptr3 = ptr3 + sizeof(struct tourdata);
-
-	memcpy(data, buf, rem_size);
 	// IPv4 header
 
 	// IPv4 header length (4 bits): Number of 32-bit words in header = 5
@@ -375,32 +320,26 @@ int sendRtMsgIntermediate(int sd, void * buf, ssize_t len){
 	iphdr.ip_tos = 0;// Type of service (8 bits)	
 	iphdr.ip_len = htons (IP4_HDRLEN + ICMP_HDRLEN + datalen);// Total length of datagram (16 bits): IP header + UDP header + datalen	
 	iphdr.ip_id = htons (MY_IP_ID);// ID sequence number (16 bits): unused, since single datagram
-
+debug("hey");
 	// Flags, and Fragmentation offset (3, 13 bits): 0 since single datagram
 	ip_flags[0] = 0;  
 	ip_flags[1] = 0;// Do not fragment flag (1 bit)  
 	ip_flags[2] = 0;// More fragments following flag (1 bit)  
 	ip_flags[3] = 0;// Fragmentation offset (13 bits)
 
-	iphdr.ip_off = htons ((ip_flags[0] << 15)
-	                  + (ip_flags[1] << 14)
-	                  + (ip_flags[2] << 13)
-	                  +  ip_flags[3]);	
+	iphdr.ip_off = htons ((ip_flags[0] << 15) + (ip_flags[1] << 14) + (ip_flags[2] << 13) +  ip_flags[3]);	
 	iphdr.ip_ttl = 255;// Time-to-Live (8 bits): default to maximum value	
 	iphdr.ip_p = RT_PROTO;// Transport layer protocol (8 bits): 1 for ICMP
-
-	// Source IPv4 address (32 bits)
-	if ((status = inet_pton (AF_INET, src_ip, &(iphdr.ip_src))) != 1) {
-	fprintf (stderr, "inet_pton() failed.\nError message: %s", strerror (status));
-	exit (EXIT_FAILURE);
-	}
-
-	// Destination IPv4 address (32 bits)
-	if ((status = inet_pton (AF_INET, dst_ip, &(iphdr.ip_dst))) != 1) {
-	fprintf (stderr, "inet_pton() failed.\nError message: %s", strerror (status));
-	exit (EXIT_FAILURE);
-	}
-
+debug("hey");
+	void * ptr = buf + sizeof(struct tourdata);
+	ptr = ptr + (sizeof(struct in_addr) * unpack->index); //current node-item
+	iphdr.ip_src = *(struct in_addr *)ptr;
+	
+	unpack->index++;
+	ptr = ptr + sizeof(struct in_addr); //advance the pointer to the next in_addr_t
+	iphdr.ip_dst  = *(struct in_addr *)ptr;
+	debug("hey. Src IP :%s\n", printIPHuman(iphdr.ip_src.s_addr));
+	debug("hey. Dest IP :%s\n", printIPHuman(iphdr.ip_dst.s_addr));
 	// IPv4 header checksum (16 bits): set to 0 when calculating checksum
 	iphdr.ip_sum = 0;
 	iphdr.ip_sum = checksum ((uint16_t *) &iphdr, IP4_HDRLEN);
@@ -413,39 +352,37 @@ int sendRtMsgIntermediate(int sd, void * buf, ssize_t len){
 	icmphdr.icmp_cksum = 0;
 	icmphdr.icmp_cksum = icmp4_checksum(icmphdr, data, datalen);
 
+	// Copy tour packet to the new ICMP data payload
+	unpack->index = htonl(unpack->index);
+	memcpy(data, unpack, sizeof(struct tourdata));
+
+	memcpy((void*)(data + sizeof(struct tourdata)), (void*)(buf + sizeof(struct tourdata)), itemsArrSizeBytes);	
+debug("hey itemarrsizebytes %d", itemsArrSizeBytes);
 	// Prepare packet.
 	// First part is an IPv4 header.
 	memcpy (packet, &iphdr, IP4_HDRLEN);
 	// Next part of packet is upper layer protocol header.
+debug("hey");
 	memcpy ((packet + IP4_HDRLEN), &icmphdr, ICMP_HDRLEN);
 	// Finally, add the ICMP data.
+	debug("hey");
 	memcpy (packet + IP4_HDRLEN + ICMP_HDRLEN, data, datalen);
-	// Calculate ICMP header checksum
-	//icmphdr.icmp_cksum = 0;//checksum ((uint16_t *) (packet + IP4_HDRLEN), ICMP_HDRLEN + datalen);
-	memcpy ((packet + IP4_HDRLEN), &icmphdr, ICMP_HDRLEN);
-
-	// The kernel is going to prepare layer 2 information (ethernet frame header) for us.
-	// For that, we need to specify a destination for the kernel in order for it
-	// to decide where to send the raw datagram. We fill in a struct in_addr with
-	// the desired destination IP address, and pass this structure to the sendto() function.
+	debug("hey, datalen=%d", datalen);
 	memset (&sin, 0, sizeof (struct sockaddr_in));
 	sin.sin_family = AF_INET;
 	sin.sin_addr.s_addr = iphdr.ip_dst.s_addr;  
-
+	debug("hey. Dest IP :%s\n", printIPHuman(ntohl(iphdr.ip_dst.s_addr)));
 	printf("Gonna send...");
 	// Send packet.
 	if (sendto (sd, packet, IP4_HDRLEN + ICMP_HDRLEN + datalen, 0, (struct sockaddr *) &sin, sizeof (struct sockaddr)) < 0)  {
-		perror ("sendto() failed ");
-		exit (EXIT_FAILURE);
+		printFailed();
+		return 1;		
 	}
 	printOK();
 	
 	// Free allocated memory.
 	free (data);
 	free (packet);
-	free (target);
-	free (src_ip);
-	free (dst_ip);
 	free (ip_flags);
 
 	return 0;
@@ -499,7 +436,6 @@ void fillIpList(int argc, char **argv){
 }
 
 int main(int argc, char ** argv){
-	
 	int i;//, VMcount;
 	VMcount = argc - 1;
 	//0th index will house the IP of the current node that it is running on
@@ -559,7 +495,7 @@ void dispatch(int rtSocket, int pgSocket, int pfpSocket) {
 			}
 			char* ipr = inet_ntoa(senderAddr.sin_addr);			
 			debug("Got rt packet from %s, length = %d", ipr, length);									
-			processRtResponse(buf, length, senderAddr, pfpSocket);			
+			processRtResponse(buf, length, senderAddr, rtSocket);			
 		}
 		// if received a ping
 		if (FD_ISSET(pgSocket, &set)){
@@ -578,7 +514,7 @@ void dispatch(int rtSocket, int pgSocket, int pfpSocket) {
 	free(buf);
 }
 
-void processRtResponse(void *ptr, ssize_t len, SockAddrIn senderAddr, int pfpSocket)
+void processRtResponse(void *ptr, ssize_t len, SockAddrIn senderAddr, int rtsd)
 {
 	int	icmplen;
 	struct timeval	*tvsend;
@@ -604,7 +540,7 @@ void processRtResponse(void *ptr, ssize_t len, SockAddrIn senderAddr, int pfpSoc
 	printf("%s received source routing packet from %s. icmp type=%d, id=%d,imcplen=%d\n", buff, hptr->h_name, icmp->icmp_type, ntohs(icmp->icmp_id), icmplen);	
 	
 	//TODO:  Send down the chain OR MULTICAST here
-	sendRtMsgIntermediate(pfpSocket, ptr + ipheaderlen + ICMP_HDRLEN, len);
+	sendRtMsgIntermediate(rtsd, ptr + ipheaderlen + ICMP_HDRLEN, len);
 
 	//TODO:	check if we are already pinging the node
 	//If we are then just return

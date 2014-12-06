@@ -39,7 +39,7 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
 	//dto.halen = HWaddr->sll_halen;
 	memcpy(buffer, &dto, bufSize);	
 
-	printf("AREQ: Sent message to ARP to get Hardware address for IP : %s\n", inet_ntoa(s_in->sin_addr));
+	printf("Resolving Hardware address for IP %s...\n", inet_ntoa(s_in->sin_addr));
 	//Send to Unix socke file
 	int bytesSent;
 	if( (bytesSent = send(sd, buffer, bufSize, 0)) == -1){
@@ -64,7 +64,6 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
 		printf("Error setting up select that waits for API response");
 	}
 	if(FD_ISSET(sd, &rset)){
-		debug("API responded");
 		//TODO:	recv the contents and display them
 		int r;
 		char h[8];
@@ -72,7 +71,7 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
 			
 			//Copy the contents into hwaddr struct
 			memcpy(&(HWaddr->sll_addr), h, 8);
-			printf("AREQ: Received message from ARP. IP address :%s, Hardware Address :", inet_ntoa(s_in->sin_addr));
+			printf("For IP %s the hardware address is resolved: ", inet_ntoa(s_in->sin_addr));
 			printHardware(HWaddr->sll_addr);
 			printf("\n");
 			ret = 1;
@@ -81,7 +80,7 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
 		}
 	}
 	else{
-		debug("API didnt respond");
+		printf("API didnt respond\n");
 		ret = -1;
 		close(sd);
 	}

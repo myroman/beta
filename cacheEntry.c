@@ -1,17 +1,14 @@
 #include "cacheEntry.h"
 #include "misc.h"
 
-
 int insertCacheEntry(in_addr_t ip, char *hw, int ifindex, unsigned int hatype, int unix_fd, CacheEntry **headCache, CacheEntry **tailCache){
 	int ret = 0;
-	debug("here");
 	CacheEntry * newEntry = (CacheEntry * )malloc(sizeof(struct CacheEntry));
 
 	if(newEntry == NULL){
 		ret = -1;
 		return ret;
 	}
-	debug("here");
 	newEntry->ip = htonl(ip);
 	newEntry->sll_ifindex = ifindex;
 	newEntry->sll_hatype = hatype;
@@ -27,7 +24,6 @@ int insertCacheEntry(in_addr_t ip, char *hw, int ifindex, unsigned int hatype, i
 		newEntry->if_haddr[4] = 0;
 		newEntry->if_haddr[5] = 0;
 	} 
-	debug("here");
 	if(*headCache == NULL && *tailCache == NULL){
 		*headCache = newEntry;
 		*tailCache = newEntry;
@@ -53,14 +49,14 @@ void deletePartialCacheEntry(in_addr_t ip, CacheEntry ** headCache, CacheEntry *
 
 			for(i =0; i < IF_HADDR ; i++){
 				if(ptr->if_haddr[i] != 0){
-					debug("NOT PARTIAL ENTRY");
+					//debug("NOT PARTIAL ENTRY");
 					return;
 				}
 			}
 
 			//HEAD
 			if(ptr->left == NULL){
-				debug("head Delete");
+				//debug("head Delete");
 				if(ptr->right == NULL){
 					*headCache = NULL;
 					*tailCache = NULL;
@@ -74,7 +70,7 @@ void deletePartialCacheEntry(in_addr_t ip, CacheEntry ** headCache, CacheEntry *
 			}	
 			//TAIL
 			if(ptr->right == NULL){
-				debug("tail Delete");
+				//debug("tail Delete");
 				if(ptr->left == NULL){
 					*headCache = NULL;
 					*tailCache = NULL;
@@ -86,7 +82,7 @@ void deletePartialCacheEntry(in_addr_t ip, CacheEntry ** headCache, CacheEntry *
 			}
 			//MIDDLE
 			if(ptr->right != NULL && ptr->left != NULL){
-				debug("Middle delete");
+				//debug("Middle delete");
 				ptr->left->right = ptr->right;
 				ptr->right->left = ptr->left;
 			}
