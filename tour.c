@@ -37,12 +37,20 @@ int sendRtMsg(int sd);
 int sendRtMsgIntermediate(int sd, void *buf, ssize_t len);
 void processRtResponse(void *ptr, ssize_t len, SockAddrIn senderAddr, int pfpSocket);
 void processPgResponse(void *buf, ssize_t len, SockAddrIn senderAddr, int addrlen);
+void processMulticastRecv(void *buf, ssize_t len, SockAddrIn senderAddr, int addrlen) ;
+void subscribeToMulticast(struct tourdata *unpack);
 void tv_sub(struct timeval *out, struct timeval *in);
+int myudp_client(in_addr_t multicastIp, in_port_t multicastPort, SA **saptr, socklen_t *lenp);
 
 int VMcount;
 struct in_addr * ip_list;
 char* myNodeIP;
 char* myNodeName;
+
+int mcastSendSd = -1;
+int mcastRecvSd = -1;
+socklen_t salen;	
+struct sockaddr *sasend;
 
 //Hold the nodes we are already pinging 
 int numPinging = 0;
@@ -189,6 +197,8 @@ int sendRtMsg(int sd){
 	td.mult_port = htons(MULTICAST_PORT);
 	memcpy(data, &td, sizeof(struct tourdata));
 
+	subscribeToMulticast(&td);
+
 	void * ptr = data;
 	ptr = ptr + sizeof(struct tourdata);
 	int i;
@@ -296,19 +306,26 @@ int sendRtMsgIntermediate(int sd, void * buf, ssize_t len){
 	ip_flags = allocate_intmem (4);
 	//Unpack the tourdata 
 	struct tourdata * unpack = (struct tourdata *)buf;
+
+	subscribeToMulticast(unpack);
+
 	//since we work and change index
 	unpack->index = ntohl(unpack->index);
 	printf("Index:%d, nodes in tour:%d\n", unpack->index, ntohl(unpack->nodes_in_tour));
 	if((unpack->index + 1) == ntohl(unpack->nodes_in_tour)){
 		//Tour has ended. Send multicast here to everyone and return actually 
 		//you dont send anyting from here
-		printf("Tour has ended. Send Multicast message for everyone to report to me.");
-		
+		char finalMsg[MAXLINE];
+		sprintf(finalMsg, "<<<<< This is node %s . Tour has ended. Group members please identify yourselves. >>>>>", myNodeName);
+		printf("Node %s. Sending: %s", myNodeName, finalMsg);
+		sendto(mcastSendSd, finalMsg, MAXLINE, 0, sasend, salen);
+
 		free (data);
 		free (packet);
 		free (ip_flags);
 		return 0;		
 	}			
+
 	int itemsArrSizeBytes = ntohl(unpack->nodes_in_tour) * sizeof(struct in_addr);
 	int datalen = sizeof(struct tourdata) + itemsArrSizeBytes;
 	
@@ -447,9 +464,23 @@ int main(int argc, char ** argv){
 	int pgSocket = createPgSocket();
 	int rtSocket = createRtSocket();
 	int pfpSocket = createPfPacketSocket();
+	
+	// create multicast sockets
 	if (VMcount > 0) {			
-		sendRtMsg(rtSocket);
-		//if we set some input args, let's send PF_PACKET ICMP msg to vm1
+		sendRtMsg(rtSocket);	
+		
+	} else {
+		/*struct sockaddr safrom;
+		// receive multicast
+		for ( ; ; ) {
+			socklen_t len = salen;
+			printf("Waiting for stuff\n");
+			int n = Recvfrom(recvMcastSocket, line, MAXLINE, 0, &safrom, &len);
+
+			line[n] = 0;
+			printf("from %s: %s\n", Sock_ntop(&safrom, len), line);
+		}
+		*/
 	}
 
 	dispatch(rtSocket, pgSocket, pfpSocket);	
@@ -475,9 +506,13 @@ void dispatch(int rtSocket, int pgSocket, int pfpSocket) {
 		FD_ZERO(&set);
 		FD_SET(rtSocket, &set);
 		FD_SET(pgSocket, &set);
-
-		maxfd = getmax(rtSocket, pgSocket) + 1;
-		res = select(maxfd, &set, NULL, NULL, &tv);
+		maxfd = max(rtSocket, pgSocket);
+		if (mcastRecvSd > 0) {
+			FD_SET(mcastRecvSd, &set);
+			maxfd = max(maxfd, mcastRecvSd);
+		}
+		
+		res = select(maxfd + 1, &set, NULL, NULL, &tv);
 		if (res < 0) {
 			debug("Nothing read. Timeout.");				
 			continue;
@@ -509,7 +544,17 @@ void dispatch(int rtSocket, int pgSocket, int pfpSocket) {
 
 			processPgResponse(buf, length, senderAddr, addrLen);
 		}
-		
+
+		if (mcastRecvSd > 0 && FD_ISSET(mcastRecvSd, &set)){
+			bzero(buf, MAXLINE);
+			bzero(&senderAddr, addrLen);
+		 	addrLen = sizeof(senderAddr);
+			int length = recvfrom(mcastRecvSd, buf, MAXLINE, 0, (SA* )&senderAddr, &addrLen);
+			if (length == -1) { 
+				printFailed();								
+			}
+			processMulticastRecv(buf, length, senderAddr, addrLen);
+		}	
 	}
 	free(buf);
 }
@@ -556,6 +601,7 @@ void processRtResponse(void *ptr, ssize_t len, SockAddrIn senderAddr, int rtsd)
 	numPinging++;
 	sendPing(ip_list[0], (struct sockaddr *)&senderAddr, sizeof(senderAddr));
 }
+
 void processPgResponse(void *ptr, ssize_t len, SockAddrIn senderAddr, int addrlen) {
 	int icmplen;
 	struct ip *ip = (struct ip *) ptr;		/* start of IP header */	
@@ -594,4 +640,60 @@ void tv_sub(struct timeval *out, struct timeval *in)
 		out->tv_usec += 1000000;
 	}
 	out->tv_sec -= in->tv_sec;
+}
+
+int myudp_client(in_addr_t multicastIp, in_port_t multicastPort, SA **saptr, socklen_t *lenp)
+{
+	int sockfd, n;
+	struct addrinfo	hints, *res, *ressave;
+
+	bzero(&hints, sizeof(struct addrinfo));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_DGRAM;
+	struct in_addr hostAddr;
+	hostAddr.s_addr = multicastIp;
+	char* ipAddr = inet_ntoa(hostAddr);
+	char port[6];
+	sprintf(port, "%d", ntohs(multicastPort));
+	port[5] = '\0';
+	
+	if ( (n = getaddrinfo(ipAddr, port, &hints, &res)) != 0)
+		err_quit("udp_client error for %s, %s: %s",
+				 ipAddr, port, gai_strerror(n));
+	ressave = res;
+	do {
+		sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+		if (sockfd >= 0)
+			break;		/* success */
+	} while ( (res = res->ai_next) != NULL);
+	if (res == NULL)	/* errno set from final socket() */
+		err_sys("udp_client error for %s, %s", ipAddr, port);
+	*saptr = Malloc(res->ai_addrlen);
+	memcpy(*saptr, res->ai_addr, res->ai_addrlen);
+	*lenp = res->ai_addrlen;
+	freeaddrinfo(ressave);
+	return(sockfd);
+}
+
+void subscribeToMulticast(struct tourdata *unpack) {
+	const int on = 1;	
+	debug("hey");
+	if (mcastRecvSd > 0) {
+		return; // we've already subsc.
+	}
+
+	mcastSendSd = myudp_client(unpack->mult_ip, unpack->mult_port, (SA **)&sasend, &salen);
+	debug("hey");
+	mcastRecvSd = Socket(sasend->sa_family,  SOCK_DGRAM, 0);
+	Setsockopt(mcastRecvSd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+	struct sockaddr *sarecv = Malloc(salen);
+	memcpy(sarecv, sasend, salen);
+	Bind(mcastRecvSd, sarecv, salen);
+	Mcast_join(mcastRecvSd, sasend, salen, NULL, 0);
+
+	debug("I subscribed\n");
+}
+
+void processMulticastRecv(void *buf, ssize_t len, SockAddrIn senderAddr, int addrlen) {	
+	printf("Node %s. Received %s\n", myNodeName, (char*)buf);
 }

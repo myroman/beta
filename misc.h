@@ -30,7 +30,7 @@ int getmax(int a, int b);
 #define UNIX_FILE "ARPUnixFile"
 
 
-#define MULTICAST_PORT  50000
+#define MULTICAST_PORT  47283
 #define MULTICAST_IP "224.0.0.231"
 
 //hwaddr structure
