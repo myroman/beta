@@ -29,15 +29,13 @@
 #define IP4_HDRLEN 20  // IPv4 header length
 #define ICMP_HDRLEN 8  // ICMP header length for echo request, excludes data
 
-void sendPing(struct sockaddr *destIp, socklen_t sockaddrlen)
+void sendPing(struct in_addr srcIp, struct sockaddr *destAddr, socklen_t sockaddrlen)
 {
 	int i, status, datalen, frame_length, sd, bytes, *ip_flags;
-	char *interface, *target, *src_ip, *dst_ip;
+	char *interface;
 	struct ip iphdr;
 	struct icmp send_icmphdr;
 	uint8_t *src_mac, *dst_mac, *ether_frame;
-	struct addrinfo hints, *res;
-	struct sockaddr_in *ipv4;
 	struct sockaddr_ll device;
 	struct ifreq ifr;
 	void *tmp;
@@ -47,9 +45,6 @@ void sendPing(struct sockaddr *destIp, socklen_t sockaddrlen)
 	dst_mac = allocate_ustrmem (6);
 	ether_frame = allocate_ustrmem (IP_MAXPACKET);
 	interface = allocate_strmem (40);
-	target = allocate_strmem (40);
-	src_ip = allocate_strmem (INET_ADDRSTRLEN);
-	dst_ip = allocate_strmem (INET_ADDRSTRLEN);
 	ip_flags = allocate_intmem (4);
 
 	// Interface to send packet through.
@@ -82,7 +77,7 @@ void sendPing(struct sockaddr *destIp, socklen_t sockaddrlen)
 	}
 
 	struct hwaddr destHwAddr;
-	int res2 = areq(destIp, sockaddrlen, &destHwAddr);
+	int res2 = areq(destAddr, sockaddrlen, &destHwAddr);
 	if (res2 == -1) {
 		printf("ARP haven't responded. Return\n");
 		return;
@@ -94,35 +89,6 @@ void sendPing(struct sockaddr *destIp, socklen_t sockaddrlen)
 	memcpy(dst_mac, &destHwAddr.sll_addr, 6);
 	printf("ARP gave us MAC:\n");
 	printHardware(dst_mac);
-	/*dst_mac[0] = 0x00;
-	dst_mac[1] = 0x0c;
-	dst_mac[2] = 0x29;
-	dst_mac[3] = 0x49;
-	dst_mac[4] = 0x3f;
-	dst_mac[5] = 0x5b;
-	*/
-	strcpy (src_ip, "130.245.156.22");
-	strcpy (target, "130.245.156.21");
-
-	// Fill out hints for getaddrinfo().
-	memset (&hints, 0, sizeof (struct addrinfo));
-	hints.ai_family = AF_INET;
-	hints.ai_socktype = SOCK_STREAM;
-	hints.ai_flags = hints.ai_flags | AI_CANONNAME;
-
-	// Resolve target using getaddrinfo().
-	if ((status = getaddrinfo (target, NULL, &hints, &res)) != 0) {
-		fprintf (stderr, "getaddrinfo() failed: %s\n", gai_strerror (status));
-		exit (EXIT_FAILURE);
-	}
-	ipv4 = (struct sockaddr_in *) res->ai_addr;
-	tmp = &(ipv4->sin_addr);
-	if (inet_ntop (AF_INET, tmp, dst_ip, INET_ADDRSTRLEN) == NULL) {
-		status = errno;
-		fprintf (stderr, "inet_ntop() failed.\nError message: %s", strerror (status));
-		exit (EXIT_FAILURE);
-	}
-	freeaddrinfo (res);
 
 	// Fill out sockaddr_ll.
 	device.sll_family = AF_PACKET;
@@ -152,18 +118,8 @@ void sendPing(struct sockaddr *destIp, socklen_t sockaddrlen)
 	// Time-to-Live (8 bits): default to maximum value
 	iphdr.ip_ttl = 255;  
 	iphdr.ip_p = IPPROTO_ICMP;// Transport layer protocol (8 bits)
-
-	// Source IPv4 address (32 bits)
-	if ((status = inet_pton (AF_INET, src_ip, &(iphdr.ip_src))) != 1) {
-		fprintf (stderr, "inet_pton() failed.\nError message: %s", strerror (status));
-		exit (EXIT_FAILURE);
-	}
-
-	// Destination IPv4 address (32 bits)
-	if ((status = inet_pton (AF_INET, dst_ip, &(iphdr.ip_dst))) != 1) {
-		fprintf (stderr, "inet_pton() failed.\nError message: %s", strerror (status));
-		exit (EXIT_FAILURE);
-	}
+	iphdr.ip_src = srcIp;
+	iphdr.ip_dst = ((struct sockaddr_in*)destAddr)->sin_addr;
 	
 	// IPv4 header checksum (16 bits): set to 0 when calculating checksum
 	iphdr.ip_sum = 0;
@@ -221,9 +177,6 @@ void sendPing(struct sockaddr *destIp, socklen_t sockaddrlen)
 	free (dst_mac);
 	free (ether_frame);
 	free (interface);
-	free (target);
-	free (src_ip);
-	free (dst_ip);
 	free (ip_flags);
 
 	return;

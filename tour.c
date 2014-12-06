@@ -37,7 +37,6 @@ int sendRtMsg(int sd);
 int sendRtMsgIntermediate(int sd, void *buf, ssize_t len);
 void processRtResponse(void *ptr, ssize_t len, SockAddrIn senderAddr, int pfpSocket);
 void processPgResponse(void *buf, ssize_t len, SockAddrIn senderAddr, int addrlen);
-void sendPing();
 void tv_sub(struct timeval *out, struct timeval *in);
 
 int VMcount;
@@ -157,15 +156,8 @@ int sendRtMsg(int sd){
 	dst_ip = allocate_strmem (INET_ADDRSTRLEN);
 	ip_flags = allocate_intmem (4);
 
-	// Interface to send packet through.
-	// TODO: 	Remove hardcoded value make source ip equal to ip_list[0]
-	//		 	Make targe equal to ip_list[index + 1];
-	
-
-	//strcpy (src_ip, "130.245.156.21\0");
 	strcpy(src_ip, inet_ntoa(ip_list[0]));
 
-	//strcpy (target, "130.245.156.22\0");
 	strcpy(target, inet_ntoa(ip_list[1]));
 	debug("Source IP %s, targe IP %s", src_ip, target);
 
@@ -188,14 +180,10 @@ int sendRtMsg(int sd){
 		exit (EXIT_FAILURE);
 	}
 	freeaddrinfo (res);	
-
-
-	debug("VMcount %d", VMcount);
 	datalen = sizeof(struct tourdata) + (VMcount * 4);
-	debug("datalen = %d", datalen);
 	
 	struct tourdata td;
-	td.index = htonl(0);
+	td.index = htonl(1);
 	td.nodes_in_tour = htonl(VMcount);
 	td.mult_ip = inet_addr(MULTICAST_IP);
 	td.mult_port = htons(MULTICAST_PORT);
@@ -207,17 +195,9 @@ int sendRtMsg(int sd){
 	//Add the IPs of the VMs to visit
 	for(i = 1; i <=VMcount; i++){
 		memcpy(ptr, &ip_list[i], 4);
-		debug("%s", inet_ntoa(ip_list[i]));
 		struct in_addr * temp2 = (struct in_addr *) ptr;
-		debug("%s", inet_ntoa(*temp2));
 		ptr = ptr + 4;
 	}
-	// ICMP data
-	//datalen = 4;
-	//data[0] = 'T';
-	//data[1] = 'e';
-	//data[2] = 's';
-	//data[3] = 't';
 
 	// IPv4 header
 
@@ -284,8 +264,6 @@ int sendRtMsg(int sd){
 	sin.sin_family = AF_INET;
 	sin.sin_addr.s_addr = iphdr.ip_dst.s_addr;  
 
-	printf("Gonna send...");
-	// Send packet.
 	if (sendto (sd, packet, IP4_HDRLEN + ICMP_HDRLEN + datalen, 0, (struct sockaddr *) &sin, sizeof (struct sockaddr)) < 0)  {
 		perror ("sendto() failed ");
 		exit (EXIT_FAILURE);
@@ -321,10 +299,9 @@ int sendRtMsgIntermediate(int sd, void * buf, ssize_t len){
 	src_ip = allocate_strmem (INET_ADDRSTRLEN);
 	dst_ip = allocate_strmem (INET_ADDRSTRLEN);
 	ip_flags = allocate_intmem (4);
-
 	//Unpack the tourdata 
 	struct tourdata * unpack = (struct tourdata *)buf;
-
+	printf("Index:%d, nodes in tour:%d\n", ntohl(unpack->index), ntohl(unpack->nodes_in_tour));
 	if(unpack->index == unpack->nodes_in_tour){
 		//Tour has ended. Send multicast here to everyone and return actually 
 		//you dont send anyting from here
@@ -380,7 +357,6 @@ int sendRtMsgIntermediate(int sd, void * buf, ssize_t len){
 	//TODO: we want to modify the contents of buf here only not recreate the buffer
 	//		Get rid of the following code 
 	datalen =len;
-	debug("datalen = %d", datalen);
 	
 	memcpy(data, unpack, sizeof(struct tourdata));
 
@@ -390,25 +366,7 @@ int sendRtMsgIntermediate(int sd, void * buf, ssize_t len){
 	ptr2 = ptr2 + sizeof(struct tourdata);//advance it to the first VM
 	ptr3 = ptr3 + sizeof(struct tourdata);
 
-	memcpy(data, buf, rem_size);//
-	/*void * ptr = data;
-	ptr = ptr + sizeof(struct tourdata);
-	int i;
-	//Add the IPs of the VMs to visit
-	for(i = 1; i <=VMcount; i++){
-		memcpy(ptr, &ip_list[i], 4);
-		debug("%s", inet_ntoa(ip_list[i]));
-		struct in_addr * temp2 = (struct in_addr *) ptr;
-		debug("%s", inet_ntoa(*temp2));
-		ptr = ptr + 4;
-	}*/
-	// ICMP data
-	//datalen = 4;
-	//data[0] = 'T';
-	//data[1] = 'e';
-	//data[2] = 's';
-	//data[3] = 't';
-
+	memcpy(data, buf, rem_size);
 	// IPv4 header
 
 	// IPv4 header length (4 bits): Number of 32-bit words in header = 5
@@ -512,9 +470,7 @@ void getNodeName(){
 		}
 	}
 	myNodeIP = Sock_ntop_host(sa, sizeof(*sa));
-	//myNodeName = findNameofVM(myNodeIP);
 	if(inet_aton(myNodeIP, &ip_list[0]) != 0){
-            //if((hptr = gethostbyaddr(&ipv4addr, sizeof ipv4addr, AF_INET)) == NULL)
 			if((hptr = gethostbyaddr(&ip_list[0], sizeof(struct in_addr), AF_INET)) == NULL){
                     err_quit ( "gethostbyaddress error for IP address: %s: %s" , myNodeIP, hstrerror(h_errno));
             		debug("errno: %s", strerror(errno));
@@ -522,31 +478,23 @@ void getNodeName(){
             printf("The server host name is %s.\n", hptr->h_name);
             myNodeName =(char*) malloc(strlen(hptr->h_name));
             strcpy(myNodeName,hptr->h_name);
-            //strcpy(myNodeName, myNodeIP);//copy the string into string
-    }
-    //TODO: ntohl the 32 bit ip
-    ip_list[0].s_addr = ntohl(ip_list[0].s_addr);
-    debug("%s %s", myNodeName, myNodeIP);
-    debug("%d: %s", 0, inet_ntoa((ip_list[0])));
+    }    
 }
 
 void fillIpList(int argc, char **argv){
 	int i, VMcount;
 	VMcount = argc - 1;
-	info("Number of VMs passed: %d", (VMcount));
+	//info("Number of VMs passed: %d", (VMcount));
 	for(i = 1; i < argc; i++){
 		struct hostent *hptr;
 		hptr = gethostbyname(argv[i]);
 		char str[INET_ADDRSTRLEN];
 		inet_ntop(hptr->h_addrtype, hptr-> h_addr_list[0],str, sizeof(str));
-		//debug("%s", str);
-		//TODO: store as network byte order
 		ip_list[i].s_addr =  inet_addr(str);
-		ip_list[i].s_addr = htonl(ip_list[i].s_addr);
 		info("%d: %s", i, argv[i]);
 	}
 	for(i = 1; i < argc; i++){
-		debug("%d: %s", i, inet_ntoa(*(ip_list+i)));
+		//debug("%d: %s", i, inet_ntoa(*(ip_list+i)));
 	}
 }
 
@@ -593,7 +541,6 @@ void dispatch(int rtSocket, int pgSocket, int pfpSocket) {
 		FD_SET(pgSocket, &set);
 
 		maxfd = getmax(rtSocket, pgSocket) + 1;
-		printf("Waiting for incoming packets...\n");
 		res = select(maxfd, &set, NULL, NULL, &tv);
 		if (res < 0) {
 			debug("Nothing read. Timeout.");				
@@ -640,14 +587,13 @@ void processRtResponse(void *ptr, ssize_t len, SockAddrIn senderAddr, int pfpSoc
 	if (ip->ip_p != RT_PROTO)
 		return;				/* not RT */
 
-	int hlen1 = ip->ip_hl << 2;		/* length of IP header */	
-	struct icmp	*icmp = (struct icmp *) (ptr + hlen1);	/* start of ICMP header */
-	if ( (icmplen = len - hlen1) < 8)
+	int ipheaderlen = ip->ip_hl << 2;		/* length of IP header */	
+	struct icmp	*icmp = (struct icmp *) (ptr + ipheaderlen);	/* start of ICMP header */
+	if ( (icmplen = len - ipheaderlen) < 8)
 		return;				/* malformed packet */
 	if (ntohs(icmp->icmp_id) != RT_ICMPID) {
 		return;
 	}
-
 
 	time_t ticks = time(NULL);
     snprintf(buff, sizeof(buff), "%.24s", ctime(&ticks));
@@ -658,7 +604,7 @@ void processRtResponse(void *ptr, ssize_t len, SockAddrIn senderAddr, int pfpSoc
 	printf("%s received source routing packet from %s. icmp type=%d, id=%d,imcplen=%d\n", buff, hptr->h_name, icmp->icmp_type, ntohs(icmp->icmp_id), icmplen);	
 	
 	//TODO:  Send down the chain OR MULTICAST here
-	sendRtMsgIntermediate(pfpSocket, ptr, len);
+	sendRtMsgIntermediate(pfpSocket, ptr + ipheaderlen + ICMP_HDRLEN, len);
 
 	//TODO:	check if we are already pinging the node
 	//If we are then just return
@@ -672,7 +618,7 @@ void processRtResponse(void *ptr, ssize_t len, SockAddrIn senderAddr, int pfpSoc
 	}
 	pinging_ip[numPinging] = senderAddr.sin_addr.s_addr;
 	numPinging++;
-	sendPing();
+	sendPing(ip_list[0], (struct sockaddr *)&senderAddr, sizeof(senderAddr));
 }
 void processPgResponse(void *ptr, ssize_t len, SockAddrIn senderAddr, int addrlen) {
 	int icmplen;
@@ -680,14 +626,15 @@ void processPgResponse(void *ptr, ssize_t len, SockAddrIn senderAddr, int addrle
 	
 	if (ip->ip_p != IPPROTO_ICMP)
 		return;				/* not ICMP */
-	int hlen1 = ip->ip_hl << 2;		/* length of IP header */	
-	struct icmp	*icmp = (struct icmp *) (ptr + hlen1);	/* start of ICMP header */
-	if ( (icmplen = len - hlen1) < 8)
+	int ipheaderlen = ip->ip_hl << 2;		/* length of IP header */	
+	struct icmp	*icmp = (struct icmp *) (ptr + ipheaderlen);	/* start of ICMP header */
+	if ( (icmplen = len - ipheaderlen) < 8)
 		return;				/* malformed packet */
+
 	if (icmp->icmp_type != 0) {
 		return;
 	}
-	if (ntohs(icmp->icmp_id) != RT_ICMPID) {
+	if (ntohs(icmp->icmp_id) != PING_ICMPID) {
 		return;
 	}
 	
