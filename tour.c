@@ -52,6 +52,8 @@ int mcastSendSd = -1;
 int mcastRecvSd = -1;
 socklen_t salen;	
 struct sockaddr *sasend;
+int endOfTour = 0;
+int lastPings = 0;
 
 //Hold the nodes we are already pinging 
 int numPinging = 0;
@@ -317,10 +319,7 @@ int sendRtMsgIntermediate(int sd, void * buf, ssize_t len){
 	if((unpack->index + 1) == ntohl(unpack->nodes_in_tour)){
 		//Tour has ended. Send multicast here to everyone and return actually 
 		//you dont send anyting from here
-		char finalMsg[MAXLINE];
-		sprintf(finalMsg, "<<<<< This is node %s . Tour has ended. Group members please identify yourselves. >>>>>", myNodeName);
-		printf("Node %s. Sending: %s", myNodeName, finalMsg);
-		sendto(mcastSendSd, finalMsg, MAXLINE, 0, sasend, salen);
+		endOfTour = 1;		
 
 		free (data);
 		free (packet);
@@ -469,20 +468,7 @@ int main(int argc, char ** argv){
 	
 	// create multicast sockets
 	if (VMcount > 0) {			
-		sendRtMsg(rtSocket);	
-		
-	} else {
-		/*struct sockaddr safrom;
-		// receive multicast
-		for ( ; ; ) {
-			socklen_t len = salen;
-			printf("Waiting for stuff\n");
-			int n = Recvfrom(recvMcastSocket, line, MAXLINE, 0, &safrom, &len);
-
-			line[n] = 0;
-			printf("from %s: %s\n", Sock_ntop(&safrom, len), line);
-		}
-		*/
+		sendRtMsg(rtSocket);			
 	}
 
 	dispatch(rtSocket, pgSocket, pfpSocket);	
@@ -503,7 +489,13 @@ void dispatch(int rtSocket, int pgSocket, int pfpSocket) {
 
 	debug("Gonna listen to rtsocket: %d", rtSocket);
 	for(;;){
-		tv.tv_sec = 10;
+		if (endOfTour == 0) {
+			tv.tv_sec = 20;
+		} 
+		else {
+			tv.tv_sec = 5;			
+		}
+		
 		tv.tv_usec = 0;
 		FD_ZERO(&set);
 		FD_SET(rtSocket, &set);
@@ -513,9 +505,12 @@ void dispatch(int rtSocket, int pgSocket, int pfpSocket) {
 			FD_SET(mcastRecvSd, &set);
 			maxfd = max(maxfd, mcastRecvSd);
 		}
-		
 		res = select(maxfd + 1, &set, NULL, NULL, &tv);
-		if (res < 0) {
+		if (res == 0) {
+			if (endOfTour == 1) {
+				printf("Auf Wiedersehen!\n");
+				return;
+			}
 			debug("Nothing read. Timeout.");				
 			continue;
 		}
@@ -556,6 +551,7 @@ void dispatch(int rtSocket, int pgSocket, int pfpSocket) {
 				printFailed();								
 			}
 			processMulticastRecv(buf, length, senderAddr, addrLen);
+
 		}	
 	}
 	free(buf);
@@ -636,6 +632,21 @@ void processPgResponse(void *ptr, ssize_t len, SockAddrIn senderAddr, int addrle
 		return;
 	}
 	
+	if (endOfTour == 1) {
+		lastPings++;
+		if (lastPings == 5) {
+			char finalMsg[MAXLINE];
+			int i = 0;
+			for (i = 0; i < numPinging;++i) {
+				pthread_cancel(ping_thread_ids[i]);	
+			}
+
+			sprintf(finalMsg, "<<<<< This is node %s . Tour has ended. Group members please identify yourselves. >>>>>", myNodeName);
+			printf("Node %s. Sending: %s\n", myNodeName, finalMsg);
+			sendto(mcastSendSd, finalMsg, MAXLINE, 0, sasend, salen);
+		}
+	}
+
 	struct timeval	*tvsend;
 	struct timeval tvrecv;
 	Gettimeofday(&tvrecv, NULL);
@@ -712,4 +723,18 @@ void subscribeToMulticast(struct tourdata *unpack) {
 
 void processMulticastRecv(void *buf, ssize_t len, SockAddrIn senderAddr, int addrlen) {	
 	printf("Node %s. Received %s\n", myNodeName, (char*)buf);
+	
+	if (endOfTour != 1) {
+		// stop pinging
+		char msg[MAXLINE];
+		int i = 0;
+		for (i = 0; i < numPinging;++i) {
+			pthread_cancel(ping_thread_ids[i]);					
+		}
+
+		sprintf(msg, "<<<<< Node %s. I am a member of the group. >>>>>", myNodeName);
+		printf("Node %s. Sending: %s\n", myNodeName, msg);	
+		sendto(mcastSendSd, msg, MAXLINE, 0, sasend, salen);
+	}
+	endOfTour = 1;
 }

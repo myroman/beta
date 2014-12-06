@@ -186,11 +186,11 @@ void infiniteSelect(int unix_sd, int pf_sd){
             struct arpdto * msgr = (struct arpdto *)buff;
             struct in_addr ina;
             ina.s_addr = msgr->ipaddr;
-            CacheEntry * lookup  = findHwByIP(msgr->ipaddr, headCache);
+            printf("Looking for HW addr in cache for %s...", printIPHuman(ntohl(msgr->ipaddr)));
+            CacheEntry * lookup  = findHwByIP(msgr->ipaddr, headCache);            
            	if(lookup == NULL){
+           		printf("not found\n");
            		sendArp(pf_sd, myIpAddr, msgr->ipaddr, ARP_REQ, dst_mac);           		
-           		
-           		debug("Cache entry not found.");
            		
            		//TODO: Add partial entry to cache
            		insertCacheEntry(msgr->ipaddr, NULL, msgr->ifindex, msgr->hatype, s2, &headCache, &tailCache);
@@ -218,7 +218,9 @@ void infiniteSelect(int unix_sd, int pf_sd){
            	}
            	else{
            		//TODO: return the hardware address to areq
-           		debug("Cache entry found.");
+           		printf("found: ");
+           		printHardware(lookup->if_haddr);
+           		printf("\n");
            		if(send(s2, lookup->if_haddr, IF_HADDR, 0) < 0){
            			perror("Sending the found Cache Entry");
            		}
@@ -367,7 +369,7 @@ int handleIncomingArpMsg(int pfSocket, void* buf) {
 		lookup->sll_ifindex = senderAddr.sll_ifindex;
 		lookup->sll_hatype = arph.ar_hrd;
 		
-		printCacheEntries(headCache);
+		//printCacheEntries(headCache);
 		
 		if(send(lookup->unix_fd, lookup->if_haddr, IF_HADDR, 0) < 0){
    			perror("Error when responding to unix domain socket\n");
